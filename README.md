@@ -1,10 +1,12 @@
 <p align="center"><strong><a href="https://www.cerebroamigo.com.br">www.cerebroamigo.com.br</a></strong></p>
 
-<p align="center"><strong><a href="https://www.cerebroamigo.com.br/demo">View live demo</a></strong> · <strong><a href="https://www.cerebroamigo.com.br/p/entrar">Enter the fictional patient portal</a></strong> · no credentials required</p>
+<p align="center"><strong>The hosted demo has been retired.</strong> · Inspect the system through the <a href="#architecture">architecture</a>, the <a href="./docs/adrs">ADRs</a>, or by running the full stack locally with <code>docker compose up -d --build</code></p>
 
 # Cérebro Amigo V3
 
 A demonstration platform for psychiatric care between appointments, designed to connect the patient's daily routine to the physician's decision-making with safety, context, and traceability.
+
+> Originally built as a commercial product; published here as a sanitized engineering case study — history squashed, credentials rotated, infrastructure decommissioned. The architecture, decisions and code are the artifact.
 
 **🇧🇷 [Versão em português](./README.pt-br.md)**
 
@@ -38,17 +40,26 @@ The goal is not just to simulate screens. The monorepo implements service bounda
 
 ## Current portfolio runtime
 
-| Layer | Current runtime |
+| Layer | Status |
 |---|---|
-| **Frontend** | Vercel (`apps/web` and `apps/checkup`) |
-| **Backend** | Azure Container Apps |
-| **Database** | Azure Database for PostgreSQL Flexible Server |
-| **Azure region** | `eastus2` (United States) |
-| **Data** | Fictional, reproducible demonstration data only |
+| **Frontend** | **Active** — Vercel (`apps/web` and `apps/checkup`) |
+| **Backend** | **Decommissioned** — Azure Container Apps, shut down to stop recurring cost |
+| **Database** | **Decommissioned** — Azure Database for PostgreSQL Flexible Server |
+| **Azure region** | `eastus2` (United States), while the backend was running |
+| **Data** | Fictional, reproducible demonstration data only — no production data ever existed |
 
-This public environment is a portfolio demonstration, not an active medical service. It makes **no claim of data residency in Brazil**, and real patient or clinical data must not be entered. AWS files and runbooks describe the previous deployment or reference architecture; AWS is not part of the current public request path. See the [canonical runtime statement](./docs/CURRENT-PORTFOLIO-RUNTIME.md) and [ADR-080](./docs/adrs/ADR-080-portfolio-vercel-azure.md).
+The only public runtime still active is the **frontend on Vercel**. The Azure backend and database were decommissioned to stop recurring cost, so any surface that depended on the clinical API — the authenticated patient portal, the physician dashboard, the SSE conversation — no longer answers in the hosted environment.
 
-The recruiter-facing [`/demo`](https://www.cerebroamigo.com.br/demo) experience offers separate physician and patient tours from the same fictional portfolio snapshot. It deliberately does not depend on the clinical backend, so Azure cold starts cannot block inspection. The patient route includes local mood, medication and simulated voice-recording interactions without accessing the microphone. Recruiters can also enter the [authenticated fictional patient portal](https://www.cerebroamigo.com.br/p/entrar) in one click: the shared credential remains server-side while the normal gateway authentication and `httpOnly` session flow are exercised. See [ADR-081](./docs/adrs/ADR-081-resilient-public-demo.md).
+Inspect the system through the **code**, the **[ADRs](./docs/adrs)**, and a **local run**:
+
+```bash
+cp .env.example .env
+docker compose up -d --build
+```
+
+That brings up the same topology the hosted environment ran: Next.js, the .NET gateway, the three Python services, and PostgreSQL with RLS. See [Running locally](#running-locally).
+
+This was always a portfolio demonstration, not an active medical service. It makes **no claim of data residency in Brazil**, and real patient or clinical data must not be entered. AWS files and runbooks describe the previous deployment or reference architecture. See the [canonical runtime statement](./docs/CURRENT-PORTFOLIO-RUNTIME.md), [ADR-080](./docs/adrs/ADR-080-portfolio-vercel-azure.md), and [ADR-081](./docs/adrs/ADR-081-resilient-public-demo.md) for the design of the demo experience that ran while the backend was live.
 
 ## Product
 
@@ -196,7 +207,7 @@ docs/
 └── runbooks/            Simulated operational procedures
 ```
 
-The decommissioned Scala gateway experiment (ADR-067/071) was removed from the tree; its source is preserved under the git tag `archive/api-gateway-scala`. The active gateway is .NET 10.
+The decommissioned Scala gateway experiment (ADR-067/071) was removed from the tree; its source is preserved in an offline archive bundle, available on request. The active gateway is .NET 10.
 
 ## Running locally
 
@@ -233,7 +244,7 @@ docker compose up -d --build
 
 - No real patient data should ever be entered.
 - All screens and scenarios shown use fictional information.
-- The public runtime is in Vercel and Azure `eastus2`; it does not promise Brazilian data residency.
+- The hosted backend and database were decommissioned; only the Vercel frontend remains public, and the full system runs locally via Docker Compose.
 - AWS infrastructure is retained only as previous/reference architecture.
 - Clinical scales and safeguards were treated as controlled artifacts, but real-world use would require independent legal, clinical, security, and privacy validation.
 - Open debts and pending decisions are kept explicit in [docs/DEBT.md](./docs/DEBT.md).
