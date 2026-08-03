@@ -1,0 +1,19 @@
+www.cerebroamigo.com.br {
+	encode gzip
+	# SSE (conversa do portal) atravessa o BFF — flush imediato.
+	reverse_proxy web:3000 {
+		flush_interval -1
+	}
+}
+
+cerebroamigo.com.br {
+	redir https://www.cerebroamigo.com.br{uri} 301
+}
+
+# Gateway público: necessário p/ webhook Asaas (/api/v1/asaas/webhook) e clients
+# diretos. X-Edge-Auth fail-closed no gateway cobre o resto (ADR-074 hardening).
+api.cerebroamigo.com.br {
+	reverse_proxy api-gateway:5000 {
+		flush_interval -1
+	}
+}

@@ -1,0 +1,11 @@
+# Teste semanal de restore do backup mais recente (ADR-077).
+# Backup não testado é loteria — este timer NÃO é opcional.
+[Unit]
+Description=Teste de restore do backup Postgres (cerebro, ADR-077)
+Wants=docker.service network-online.target
+After=docker.service network-online.target
+
+[Service]
+Type=oneshot
+Environment=AWS_DEFAULT_REGION=sa-east-1
+ExecStart=/usr/local/sbin/test-restore.sh s3://cerebro-amigo-db-backups/postgres

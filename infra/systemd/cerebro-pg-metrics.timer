@@ -1,0 +1,10 @@
+# A cada minuto — alimenta os alarmes (PgUp com missing=breaching pega coletor morto).
+[Unit]
+Description=Timer do coletor Postgres -> CloudWatch (ADR-077)
+
+[Timer]
+OnCalendar=*-*-* *:*:00
+Persistent=false
+
+[Install]
+WantedBy=timers.target

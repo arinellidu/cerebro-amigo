@@ -1,0 +1,14 @@
+# Backup diário do Postgres self-hosted → S3 (ADR-077).
+# A senha vem do .env do compose (root-only). DSN em forma keyword de propósito:
+# dispensa percent-encoding (aspas aninhadas no ExecStart quebram no parser do
+# systemd — bug real pego no smoke de 2026-07-06).
+# Instalação: infra/systemd/README.md
+[Unit]
+Description=Backup Postgres -> S3 (cerebro, ADR-077)
+Wants=docker.service network-online.target
+After=docker.service network-online.target
+
+[Service]
+Type=oneshot
+Environment=AWS_DEFAULT_REGION=sa-east-1
+ExecStart=/bin/bash -c 'PW=$(grep "^POSTGRES_LOCAL_PASSWORD=" /opt/cerebro-amigo-v3/.env | cut -d= -f2-); exec /usr/local/sbin/backup-postgres.sh "host=localhost port=5432 user=postgres password=${PW} dbname=postgres" "s3://cerebro-amigo-db-backups/postgres"'

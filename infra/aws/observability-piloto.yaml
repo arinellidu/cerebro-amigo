@@ -1,0 +1,166 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  Observabilidade de piloto (sa-east-1) — Cerebro Amigo V3.
+  SNS (email) + alarmes EC2 (CPU/disco) + RDS (CPU/conexoes/FreeStorage) +
+  log groups dos containers (awslogs driver). Mem do EC2 ja tem alarme no stack
+  cerebro-ec2-status-alarms; aqui adiciona o que falta. Health-check externo
+  (Route53) vive no stack us-east-1 (uptime-piloto.yaml). Ver runbook oncall-piloto.
+
+Parameters:
+  InstanceId:
+    Type: String
+    Default: i-057860cd97edafefb
+    Description: Box clinico (cerebro-app).
+  DBInstanceId:
+    Type: String
+    Default: cerebro-postgres-enc
+  NotifyEmail:
+    Type: String
+    Default: alerts@arinelli.com
+  LogRetentionDays:
+    Type: Number
+    Default: 14
+
+Resources:
+  # ─── SNS → e-mail ────────────────────────────────────────────────────────
+  AlertTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: cerebro-amigo-piloto-alertas
+      DisplayName: Cerebro Piloto Alertas
+
+  AlertEmailSub:
+    Type: AWS::SNS::Subscription
+    Properties:
+      TopicArn: !Ref AlertTopic
+      Protocol: email
+      Endpoint: !Ref NotifyEmail
+
+  # ─── Log groups dos containers (awslogs driver no docker-compose) ─────────
+  LogGroupGateway:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /cerebro/api-gateway
+      RetentionInDays: !Ref LogRetentionDays
+  LogGroupOrchestrator:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /cerebro/orchestrator-py
+      RetentionInDays: !Ref LogRetentionDays
+  LogGroupAgents:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /cerebro/agents-py
+      RetentionInDays: !Ref LogRetentionDays
+  LogGroupNotifier:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /cerebro/notifier-py
+      RetentionInDays: !Ref LogRetentionDays
+  LogGroupWeb:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /cerebro/web
+      RetentionInDays: !Ref LogRetentionDays
+
+  # ─── EC2 (box clinico) — CPU + disco (mem ja existe em outro stack) ───────
+  Ec2CpuAlta:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: cerebro-app-cpu-alta
+      AlarmDescription: CPU do box clinico > 80% por 15min (transiente de deploy nao dispara).
+      Namespace: AWS/EC2
+      MetricName: CPUUtilization
+      Dimensions:
+        - Name: InstanceId
+          Value: !Ref InstanceId
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 3
+      Threshold: 80
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlertTopic]
+      OKActions: [!Ref AlertTopic]
+
+  Ec2DiscoAlto:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: cerebro-app-disco-alto
+      AlarmDescription: disk_used_percent (/) do box > 85%.
+      Namespace: CWAgent
+      MetricName: disk_used_percent
+      Dimensions:
+        - Name: InstanceId
+          Value: !Ref InstanceId
+      Statistic: Maximum
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 85
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlertTopic]
+      OKActions: [!Ref AlertTopic]
+
+  # ─── RDS (cerebro-postgres-enc) ──────────────────────────────────────────
+  RdsCpuAlta:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: cerebro-rds-cpu-alta
+      AlarmDescription: CPU do RDS > 80% por 15min.
+      Namespace: AWS/RDS
+      MetricName: CPUUtilization
+      Dimensions:
+        - Name: DBInstanceIdentifier
+          Value: !Ref DBInstanceId
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 3
+      Threshold: 80
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlertTopic]
+      OKActions: [!Ref AlertTopic]
+
+  RdsConexoesAltas:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: cerebro-rds-conexoes-altas
+      AlarmDescription: Conexoes do RDS > 80 (regime ~30; max t4g.small ~200). Vazamento de pool?
+      Namespace: AWS/RDS
+      MetricName: DatabaseConnections
+      Dimensions:
+        - Name: DBInstanceIdentifier
+          Value: !Ref DBInstanceId
+      Statistic: Maximum
+      Period: 300
+      EvaluationPeriods: 3
+      Threshold: 80
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlertTopic]
+      OKActions: [!Ref AlertTopic]
+
+  RdsStorageBaixo:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: cerebro-rds-storage-baixo
+      AlarmDescription: FreeStorageSpace do RDS < 2GB (de 20GB; uso normal ~3GB).
+      Namespace: AWS/RDS
+      MetricName: FreeStorageSpace
+      Dimensions:
+        - Name: DBInstanceIdentifier
+          Value: !Ref DBInstanceId
+      Statistic: Minimum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 2147483648
+      ComparisonOperator: LessThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlertTopic]
+      OKActions: [!Ref AlertTopic]
+
+Outputs:
+  TopicArn:
+    Value: !Ref AlertTopic
+    Description: SNS topic dos alertas de piloto (sa-east-1).

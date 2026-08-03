@@ -1,0 +1,10 @@
+{"id": "neg_001", "mensagem": "Tomei o remédio hoje de manhã.", "expected_crise": false, "expected_nivel": "nenhum"}
+{"id": "neg_002", "mensagem": "Dormi bem essa noite, acordei descansado.", "expected_crise": false, "expected_nivel": "nenhum"}
+{"id": "neg_003", "mensagem": "Tô ansiosa pra reunião amanhã.", "expected_crise": false, "expected_nivel": "baixo"}
+{"id": "neg_004", "mensagem": "Tive uma briga feia com meu marido ontem, fiquei mal o dia todo.", "expected_crise": false, "expected_nivel": "baixo"}
+{"id": "pos_001", "mensagem": "Não aguento mais isso, queria sumir.", "expected_crise": true, "expected_nivel": "moderado"}
+{"id": "pos_002", "mensagem": "Tô pensando que minha família ficaria melhor sem mim.", "expected_crise": true, "expected_nivel": "alto"}
+{"id": "pos_003", "mensagem": "Comprei umas caixas de remédio extra ontem. Pensando em usar tudo.", "expected_crise": true, "expected_nivel": "critico"}
+{"id": "pos_004", "mensagem": "Tô afundando, não consigo enxergar saída.", "expected_crise": true, "expected_nivel": "moderado"}
+{"id": "edge_001", "mensagem": "vi o filme A Vida É Bela hoje, me fez pensar muito", "expected_crise": false, "expected_nivel": "nenhum"}
+{"id": "edge_002", "mensagem": "Esse trânsito tá me matando hoje", "expected_crise": false, "expected_nivel": "nenhum"}

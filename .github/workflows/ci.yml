@@ -1,0 +1,288 @@
+name: CI
+
+# Gate de testes para pull requests e branches de trabalho. O frontend aprovado
+# é promovido pela Git Integration da Vercel; o runtime Azure segue o ADR-080.
+# Tier 0 de segurança clínica: o fail-safe do classificador de crise (ADR-006)
+# e a integridade do dataset de crise são verificados aqui.
+
+on:
+  pull_request:
+  push:
+    branches-ignore: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ─── Trivy: vulnerabilidades de dependência (P2 hardening) ───────────────
+  # Escaneia os manifests dos 7 serviços (pnpm/nuget/pip) por CVE com correção.
+  # GATE em CRITICAL (hoje = 0, não quebra; pega futuros); HIGH é reportado sem
+  # bloquear (baseline 2026-06-20: drizzle-orm SQLi 0.44.7→0.45.2 + xlsx — follow-up
+  # de bump). ignore-unfixed = só CVE acionável (com versão corrigida disponível).
+  trivy:
+    name: Trivy — vulnerabilidades de dependência
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Install Trivy
+        run: |
+          curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh \
+            | sh -s -- -b /usr/local/bin
+          trivy --version
+
+      # Visibilidade: tabela com CRITICAL+HIGH no log (não bloqueia).
+      - name: Trivy report (CRITICAL + HIGH)
+        run: |
+          trivy fs --scanners vuln --ignore-unfixed --no-progress \
+            --skip-dirs node_modules,bin,obj,_v2-ref \
+            --severity CRITICAL,HIGH --exit-code 0 .
+
+      # Gate: falha o CI SÓ em CRITICAL com correção. Flipar p/ incluir HIGH quando
+      # os 3 HIGH do baseline forem corrigidos (bump de drizzle-orm/xlsx no checkup/web).
+      - name: Trivy gate (CRITICAL)
+        run: |
+          trivy fs --scanners vuln --ignore-unfixed --no-progress \
+            --skip-dirs node_modules,bin,obj,_v2-ref \
+            --severity CRITICAL --exit-code 1 .
+
+  python:
+    name: Python services — lint + tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [orchestrator-py, agents-py, notifier-py]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install
+        working-directory: apps/${{ matrix.service }}
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Ruff
+        working-directory: apps/${{ matrix.service }}
+        run: ruff check .
+
+      - name: Pytest
+        working-directory: apps/${{ matrix.service }}
+        run: pytest -q
+
+  # Build .NET — pega erro de compilação do gateway no PR (antes era só no
+  # deploy: ex. CS0101 de tipo duplicado pós-merge passou despercebido).
+  dotnet:
+    name: api-gateway — build (.NET)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Restore
+        working-directory: apps/api-gateway
+        run: dotnet restore
+
+      - name: Build
+        working-directory: apps/api-gateway
+        run: dotnet build --no-restore --configuration Release
+
+  # Regressão de isolamento de tenant (Camada B / Estágio 3). Sobe Postgres real
+  # (pgvector) via Testcontainers, aplica as migrations, seeda 2 médicos e prova
+  # que médico A não lê/altera dado do paciente de B. Pega os IDOR cross-tenant
+  # (classe dos 7 achados em 2026-06-08) ANTES do merge. Docker já vem no runner.
+  dotnet-tests:
+    name: api-gateway — testes de isolamento de tenant
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Test
+        working-directory: apps/api-gateway-tests
+        run: dotnet test --configuration Release --logger "console;verbosity=normal"
+
+  # G-6 — integração entre serviços: Postgres real (pgvector) + api-gateway
+  # (dotnet run) + orchestrator-py (uvicorn), migrations aplicadas, e a cadeia
+  # HTTP→gateway→Postgres / orchestrator→Postgres exercitada de fato (login,
+  # /me, rate limit T1-1, validação de prompt T4-2, trava ADR-035, token
+  # interno). SEM LLM: ANTHROPIC_API_KEY é dummy; nenhum passo chama a API.
+  integration:
+    name: integração — gateway + orchestrator + Postgres
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: cerebro_v3
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      PGPASSWORD: ci
+      DSN_PSQL: postgresql://postgres:ci@localhost:5432/cerebro_v3
+      INTERNAL_API_TOKEN: ci-internal-token
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Migrations + seed
+        run: |
+          set -euo pipefail
+          # 0036 referencia o dono de prod (cerebroadmin) — mesmo skip do
+          # TenantIsolationFixture; o CI roda como superuser do container.
+          # Migrations recentes (0050/0051) fazem GRANT a cerebro_gateway/cerebro_workers,
+          # roles criados em prod pela 0036 (pulada). Cria stubs idempotentes p/ os GRANTs
+          # não estourarem (|| true tolera re-execução); o CI conecta como superuser.
+          psql "$DSN_PSQL" -c "CREATE ROLE cerebro_gateway NOLOGIN" 2>/dev/null || true
+          psql "$DSN_PSQL" -c "CREATE ROLE cerebro_workers NOLOGIN" 2>/dev/null || true
+          for f in infra/migrations/0*.sql; do
+            case "$f" in *least_privilege_roles*) continue ;; esac
+            psql "$DSN_PSQL" -v ON_ERROR_STOP=1 -q -f "$f"
+          done
+          pip install -q bcrypt
+          HASH=$(python3 -c "import bcrypt; print(bcrypt.hashpw(b'senha-ci-123', bcrypt.gensalt(12)).decode())")
+          psql "$DSN_PSQL" -v ON_ERROR_STOP=1 <<SQL
+          INSERT INTO usuarios (id, email, senha_hash, nome, role) VALUES
+            ('11111111-1111-1111-1111-111111111111', 'medico.ci@example.com', '$HASH', 'Médico CI', 'medico'),
+            ('22222222-2222-2222-2222-222222222222', 'admin.ci@example.com',  '$HASH', 'Admin CI',  'admin'),
+            ('44444444-4444-4444-4444-444444444444', 'owner.ci@example.com',  '$HASH', 'Owner CI',  'owner');
+          INSERT INTO medicos (id, usuario_id, nome, crm) VALUES
+            ('33333333-3333-3333-3333-333333333333', '11111111-1111-1111-1111-111111111111', 'Médico CI', 'CRM-CI');
+          SQL
+
+      - name: Sobe api-gateway (background)
+        env:
+          ConnectionStrings__Postgres: Host=localhost;Port=5432;Database=cerebro_v3;Username=postgres;Password=ci
+          Jwt__Secret: ci-secret-integration-0123456789-abcdef
+          Jwt__Issuer: cerebro-amigo
+          Jwt__Audience: dashboard
+          ASPNETCORE_URLS: http://localhost:5050
+          ASPNETCORE_ENVIRONMENT: Testing
+        working-directory: apps/api-gateway
+        run: |
+          dotnet run -c Release --no-launch-profile > /tmp/gateway.log 2>&1 &
+          echo "gateway iniciado (pid $!)"
+
+      - name: Sobe orchestrator-py (background)
+        env:
+          POSTGRES_DSN_URL: postgresql://postgres:ci@localhost:5432/cerebro_v3
+          ANTHROPIC_API_KEY: ci-dummy-key
+          LANGSMITH_TRACING: "false"
+        working-directory: apps/orchestrator-py
+        run: |
+          pip install -q -e .
+          uvicorn app.main:app --port 8081 > /tmp/orchestrator.log 2>&1 &
+          echo "orchestrator iniciado (pid $!)"
+
+      - name: Smoke de integração
+        run: bash infra/ci/integration-smoke.sh
+
+      - name: Logs dos serviços (em falha)
+        if: failure()
+        run: |
+          echo "── gateway ──"; tail -120 /tmp/gateway.log || true
+          echo "── orchestrator ──"; tail -120 /tmp/orchestrator.log || true
+
+  # Build Next.js — pega erro de compilação/TS do web no PR (antes só no deploy
+  # ou no Vercel preview). Espelha o Dockerfile: Node 24 + pnpm 10 + next build.
+  web:
+    name: web — build (Next.js)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      NEXT_TELEMETRY_DISABLED: "1"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24.15.0"
+
+      - name: Enable pnpm
+        run: corepack enable && corepack prepare pnpm@10.33.3 --activate
+
+      - name: Install
+        run: pnpm install --frozen-lockfile --filter "./apps/web..."
+
+      - name: Build
+        working-directory: apps/web
+        run: pnpm build
+
+  # Build + testes do checkup no PR — fecha o gap que deixou um build quebrado do
+  # checkup passar verde: o connection() do CK-11 só falhava no deploy (smoke-checkup),
+  # nunca no PR, porque o checkup não era validado aqui. Espelha o job `web`:
+  # Node 24 + pnpm 10. `pnpm test` cobre o motor de escalas (clinical-safety, 181
+  # casos); `pnpm build` faz o type-check strict completo (o que pega a classe do CK-11).
+  # Sem step de lint dedicado: o checkup não tem ESLint configurado e `next lint`
+  # saiu no Next 16 — o gate de tipos é o próprio build (strict), como no job `web`.
+  checkup:
+    name: checkup — testes + build (Next.js)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      NEXT_TELEMETRY_DISABLED: "1"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24.15.0"
+
+      - name: Enable pnpm
+        run: corepack enable && corepack prepare pnpm@10.33.3 --activate
+
+      - name: Install
+        run: pnpm install --frozen-lockfile --filter "./apps/checkup..."
+
+      - name: Unit tests (vitest)
+        working-directory: apps/checkup
+        run: pnpm test
+
+      - name: Build
+        working-directory: apps/checkup
+        run: pnpm build

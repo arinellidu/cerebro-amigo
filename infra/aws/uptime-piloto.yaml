@@ -1,0 +1,109 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  Uptime externo de piloto (DEPLOYAR EM us-east-1) — Cerebro Amigo V3.
+  Route53 health checks (globais) nos endpoints publicos de health + alarmes
+  HealthCheckStatus + SNS por e-mail. Fica em us-east-1 porque a metrica
+  AWS/Route53 HealthCheckStatus so existe em us-east-1. Pega box/rede down
+  que o watchdog on-box nao pega. Ver runbook oncall-piloto.
+
+Parameters:
+  GatewayFqdn:
+    Type: String
+    Default: api.cerebroamigo.com.br
+  PortalFqdn:
+    Type: String
+    Default: www.cerebroamigo.com.br
+  NotifyEmail:
+    Type: String
+    Default: alerts@arinelli.com
+
+Resources:
+  UptimeTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: cerebro-amigo-uptime-alertas
+      DisplayName: Cerebro Uptime Alertas
+
+  UptimeEmailSub:
+    Type: AWS::SNS::Subscription
+    Properties:
+      TopicArn: !Ref UptimeTopic
+      Protocol: email
+      Endpoint: !Ref NotifyEmail
+
+  # ─── Gateway: HTTPS + casa "ok" no corpo ({"status":"ok"}) ───────────────
+  GatewayHealthCheck:
+    Type: AWS::Route53::HealthCheck
+    Properties:
+      HealthCheckConfig:
+        Type: HTTPS_STR_MATCH
+        FullyQualifiedDomainName: !Ref GatewayFqdn
+        Port: 443
+        ResourcePath: /health
+        SearchString: "ok"
+        RequestInterval: 30
+        FailureThreshold: 3
+      HealthCheckTags:
+        - Key: Name
+          Value: cerebro-gateway-health
+
+  # ─── Portal/web: HTTPS 2xx em /api/health ────────────────────────────────
+  PortalHealthCheck:
+    Type: AWS::Route53::HealthCheck
+    Properties:
+      HealthCheckConfig:
+        Type: HTTPS
+        FullyQualifiedDomainName: !Ref PortalFqdn
+        Port: 443
+        ResourcePath: /api/health
+        RequestInterval: 30
+        FailureThreshold: 3
+      HealthCheckTags:
+        - Key: Name
+          Value: cerebro-portal-health
+
+  GatewayDownAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: cerebro-gateway-uptime-down
+      AlarmDescription: api.cerebroamigo.com.br/health fora do ar (Route53 externo).
+      Namespace: AWS/Route53
+      MetricName: HealthCheckStatus
+      Dimensions:
+        - Name: HealthCheckId
+          Value: !Ref GatewayHealthCheck
+      Statistic: Minimum
+      Period: 60
+      EvaluationPeriods: 3
+      Threshold: 1
+      ComparisonOperator: LessThanThreshold
+      TreatMissingData: breaching
+      AlarmActions: [!Ref UptimeTopic]
+      OKActions: [!Ref UptimeTopic]
+
+  PortalDownAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: cerebro-portal-uptime-down
+      AlarmDescription: www.cerebroamigo.com.br/api/health fora do ar (Route53 externo).
+      Namespace: AWS/Route53
+      MetricName: HealthCheckStatus
+      Dimensions:
+        - Name: HealthCheckId
+          Value: !Ref PortalHealthCheck
+      Statistic: Minimum
+      Period: 60
+      EvaluationPeriods: 3
+      Threshold: 1
+      ComparisonOperator: LessThanThreshold
+      TreatMissingData: breaching
+      AlarmActions: [!Ref UptimeTopic]
+      OKActions: [!Ref UptimeTopic]
+
+Outputs:
+  GatewayHealthCheckId:
+    Value: !Ref GatewayHealthCheck
+  PortalHealthCheckId:
+    Value: !Ref PortalHealthCheck
+  UptimeTopicArn:
+    Value: !Ref UptimeTopic

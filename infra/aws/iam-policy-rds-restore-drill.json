@@ -1,0 +1,44 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "DescribeReadOnly",
+      "Effect": "Allow",
+      "Action": ["rds:DescribeDBInstances"],
+      "Resource": "*"
+    },
+    {
+      "Sid": "RestoreDrill",
+      "Effect": "Allow",
+      "Action": ["rds:RestoreDBInstanceToPointInTime", "rds:AddTagsToResource"],
+      "Resource": [
+        "arn:aws:rds:sa-east-1:004177894935:db:cerebro-postgres-enc",
+        "arn:aws:rds:sa-east-1:004177894935:db:cerebro-postgres-restore-drill",
+        "arn:aws:rds:sa-east-1:004177894935:subgrp:*",
+        "arn:aws:rds:sa-east-1:004177894935:og:*",
+        "arn:aws:rds:sa-east-1:004177894935:pg:*"
+      ]
+    },
+    {
+      "Sid": "DeleteDrillOnly",
+      "Effect": "Allow",
+      "Action": ["rds:DeleteDBInstance"],
+      "Resource": "arn:aws:rds:sa-east-1:004177894935:db:cerebro-postgres-restore-drill"
+    },
+    {
+      "Sid": "KmsDescribeKeyDrill",
+      "Effect": "Allow",
+      "Action": ["kms:DescribeKey"],
+      "Resource": "arn:aws:kms:sa-east-1:004177894935:key/ae3bc623-68a0-4a2e-bd42-26e9dda65261"
+    },
+    {
+      "Sid": "KmsCreateGrantDrill",
+      "Effect": "Allow",
+      "Action": ["kms:CreateGrant"],
+      "Resource": "arn:aws:kms:sa-east-1:004177894935:key/ae3bc623-68a0-4a2e-bd42-26e9dda65261",
+      "Condition": {
+        "Bool": { "kms:GrantIsForAWSResource": "true" }
+      }
+    }
+  ]
+}

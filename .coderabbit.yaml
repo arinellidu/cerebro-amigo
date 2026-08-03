@@ -1,0 +1,72 @@
+language: "pt-BR"
+
+reviews:
+  profile: "chill"
+  request_changes_workflow: false
+  high_level_summary: true
+  poem: false
+  review_status: true
+  collapse_walkthrough: false
+  auto_review:
+    enabled: true
+    drafts: false
+    base_branches:
+      - main
+
+  path_instructions:
+    # Guardrails clínicos — mais rigoroso
+    - path: "apps/orchestrator-py/**"
+      instructions: |
+        Este serviço lida com conversação de pacientes e protocolo de crise.
+        Verificar OBRIGATORIAMENTE:
+        - Crise: texto ao paciente deve vir de crisis_copy.py (fixo, nunca LLM)
+        - Nenhuma chamada LLM gera resposta clínica (diagnóstico, dose, conduta)
+        - audit_response é chamado antes de qualquer texto chegar ao paciente
+        - protocolos_crise_acionados nunca recebe UPDATE/DELETE
+        - PII não é logado em texto plano (PII_REDACTION_ENABLED)
+
+    - path: "apps/agents-py/**"
+      instructions: |
+        Agentes analíticos — sem LLM conversacional com paciente.
+        Verificar:
+        - SHADOW_MODE respeitado em novos jobs proativos (checkin_humor, alerta_nao_adesao)
+        - automacao_pausada=TRUE filtra o paciente de toda automação proativa
+        - agente_execucoes nunca recebe DELETE
+
+    - path: "apps/api-gateway/Endpoints/**"
+      instructions: |
+        Gateway .NET 10. Verificar:
+        - Toda query com dado de paciente filtra por medico_responsavel_id (tenant)
+        - Nunca DBNull.Value em ExecuteSqlRawAsync; usar COALESCE(NULLIF(x,''),col)
+        - Tabelas append-only (protocolos_crise_acionados, notificacoes_medico,
+          agente_execucoes, prescricao_eventos) nunca recebem UPDATE/DELETE além
+          dos campos permitidos pelo trigger 0007
+        - Endpoint novo registrado em Program.cs
+
+    - path: "infra/migrations/**"
+      instructions: |
+        Migrações SQL (aplicadas manualmente no RDS sa-east-1).
+        Verificar:
+        - ADD COLUMN usa IF NOT EXISTS (idempotente)
+        - Tabelas append-only (ver 0007): nunca DROP/ALTER que quebre triggers
+        - Sem dado de paciente hardcoded (LGPD)
+        - Número sequencial correto (próximo disponível)
+
+    - path: "apps/web/app/api/**"
+      instructions: |
+        BFF Next.js — Route Handlers. Verificar:
+        - Cookie auth_token lido via gateway.ts (nunca exposto ao browser)
+        - Conteúdo clínico não logado (LGPD)
+        - GatewayError tratado corretamente (status repassado)
+
+    - path: "apps/web/components/crise/**"
+      instructions: |
+        Componentes de crise. Verificar:
+        - Texto de acolhimento exibido read-only (nunca editável)
+        - Retomada de automação exige confirmação explícita do médico
+        - Chamada POST /retomar auditada no gateway
+
+  abort_on_close: true
+
+chat:
+  auto_reply: true

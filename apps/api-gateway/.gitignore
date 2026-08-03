@@ -1,0 +1,13 @@
+# .NET — build (também coberto pela raiz; útil ao abrir só este projeto)
+
+[Bb]in/
+[Oo]bj/
+**/bin/
+**/obj/
+[Dd]ebug/
+[Rr]elease/
+
+*.user
+*.suo
+*.userprefs
+TestResults/

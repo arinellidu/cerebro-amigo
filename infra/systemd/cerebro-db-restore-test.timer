@@ -1,0 +1,11 @@
+# Semanal, domingo 05:00 America/Sao_Paulo (após o backup diário das 03:30).
+[Unit]
+Description=Timer semanal do teste de restore Postgres (ADR-077)
+
+[Timer]
+OnCalendar=Sun *-*-* 05:00:00 America/Sao_Paulo
+Persistent=true
+RandomizedDelaySec=600
+
+[Install]
+WantedBy=timers.target

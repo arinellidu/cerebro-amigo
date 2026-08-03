@@ -1,0 +1,158 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  Alarme de backup parado do RDS cerebro-postgres-enc (T1-6 / ADR-043 item E).
+  Lambda diaria (EventBridge) mede a idade do snapshot automatico mais recente
+  -> metrica CloudWatch Cerebro/RDS BackupAgeHours -> alarme (idade > limite, ou
+  Lambda sem publicar -> TreatMissingData breaching) -> SNS/e-mail.
+  Deploy em sa-east-1 (regiao do RDS). Lambda FORA de VPC (so usa control-plane
+  do RDS + CloudWatch, nao conecta no banco).
+
+Parameters:
+  DbInstanceId:
+    Type: String
+    Default: cerebro-postgres-enc
+    Description: >
+      Identificador do RDS a monitorar. Default = instancia cifrada do ADR-054
+      (a antiga cerebro-postgres foi descomissionada). Re-apontada em 2026-06-14.
+  AlertEmail:
+    Type: String
+    Description: E-mail do alerta (obrigatorio; passar via --parameter-overrides; confirmar a subscricao SNS no 1o deploy).
+  MaxBackupAgeHours:
+    Type: Number
+    Default: 168
+    Description: >
+      Idade maxima aceitavel do snapshot automatico mais recente, em horas.
+      168 = 7 dias (criterio do DEBT T1-6). Backups automaticos sao diarios;
+      36-48h alerta mais rapido se quiser apertar.
+
+Resources:
+
+  AlertTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: cerebro-amigo-rds-backup-alertas
+      KmsMasterKeyId: alias/aws/sns
+
+  AlertSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      TopicArn: !Ref AlertTopic
+      Protocol: email
+      Endpoint: !Ref AlertEmail
+
+  FnRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: lambda.amazonaws.com }
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: BackupCheck
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: rds:DescribeDBSnapshots
+                Resource: "*"
+              - Effect: Allow
+                Action: cloudwatch:PutMetricData
+                Resource: "*"
+                Condition:
+                  StringEquals:
+                    cloudwatch:namespace: "Cerebro/RDS"
+
+  BackupCheckFn:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: cerebro-rds-backup-check
+      Runtime: python3.12
+      Handler: index.handler
+      Timeout: 30
+      Role: !GetAtt FnRole.Arn
+      Environment:
+        Variables:
+          DB_INSTANCE_ID: !Ref DbInstanceId
+      Code:
+        ZipFile: |
+          import os, datetime, boto3
+
+          rds = boto3.client("rds")
+          cw = boto3.client("cloudwatch")
+
+          def handler(event, context):
+              inst = os.environ["DB_INSTANCE_ID"]
+              snaps = []
+              paginator = rds.get_paginator("describe_db_snapshots")
+              for page in paginator.paginate(DBInstanceIdentifier=inst, SnapshotType="automated"):
+                  snaps.extend(page["DBSnapshots"])
+              now = datetime.datetime.now(datetime.timezone.utc)
+              times = [s["SnapshotCreateTime"] for s in snaps
+                       if s.get("Status") == "available" and s.get("SnapshotCreateTime")]
+              age_hours = (now - max(times)).total_seconds() / 3600.0 if times else 9999.0
+              cw.put_metric_data(
+                  Namespace="Cerebro/RDS",
+                  MetricData=[{
+                      "MetricName": "BackupAgeHours",
+                      "Dimensions": [{"Name": "DBInstanceIdentifier", "Value": inst}],
+                      "Value": age_hours,
+                      "Unit": "None",
+                  }],
+              )
+              print(f"{inst}: backup age = {age_hours:.1f}h ({len(times)} automated snapshots)")
+              return {"age_hours": age_hours, "snapshots": len(times)}
+
+  DailySchedule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: cerebro-rds-backup-check-daily
+      ScheduleExpression: "rate(1 day)"
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt BackupCheckFn.Arn
+          Id: backup-check
+
+  InvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref BackupCheckFn
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt DailySchedule.Arn
+
+  BackupStaleAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: cerebro-rds-backup-stale
+      AlarmDescription: >
+        Snapshot automatico do RDS mais antigo que o limite (ou Lambda sem publicar
+        a metrica). Backup pode ter parado. Ver docs/runbooks/backup-e-restore.md.
+      Namespace: Cerebro/RDS
+      MetricName: BackupAgeHours
+      Dimensions:
+        - Name: DBInstanceIdentifier
+          Value: !Ref DbInstanceId
+      Statistic: Maximum
+      Period: 86400
+      EvaluationPeriods: 1
+      Threshold: !Ref MaxBackupAgeHours
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: breaching
+      AlarmActions: [ !Ref AlertTopic ]
+      OKActions: [ !Ref AlertTopic ]
+
+Outputs:
+  AlarmName:
+    Value: !Ref BackupStaleAlarm
+  TopicArn:
+    Value: !Ref AlertTopic
+  FunctionName:
+    Description: >
+      Apos o deploy, invoque uma vez p/ semear a metrica e evitar alarme inicial
+      por dado faltante: aws lambda invoke --function-name cerebro-rds-backup-check
+      --region sa-east-1 /dev/stdout
+    Value: !Ref BackupCheckFn

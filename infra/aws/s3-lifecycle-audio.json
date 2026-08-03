@@ -1,0 +1,17 @@
+{
+  "Rules": [
+    {
+      "ID": "auto-delete-audio-24h",
+      "Status": "Enabled",
+      "Filter": {
+        "Tag": {
+          "Key": "auto-delete",
+          "Value": "true"
+        }
+      },
+      "Expiration": {
+        "Days": 1
+      }
+    }
+  ]
+}

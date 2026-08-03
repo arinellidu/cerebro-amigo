@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>MEMED sandbox — smoke do evento de conclusão (Parte B)</title>
+<style>
+  body { font: 14px/1.5 system-ui, sans-serif; margin: 0; padding: 16px; background:#0b0b0c; color:#e6e6e6; }
+  h1 { font-size: 16px; }
+  label { display:block; font-size:12px; color:#9aa; margin-top:8px; }
+  input { width: 100%; max-width: 640px; padding:6px 8px; background:#141416; color:#e6e6e6; border:1px solid #333; border-radius:6px; }
+  button { margin-top:12px; padding:8px 14px; background:#2b6; color:#021; border:0; border-radius:6px; font-weight:600; cursor:pointer; }
+  #log { margin-top:16px; background:#0f0f11; border:1px solid #262; border-radius:8px; padding:12px; white-space:pre-wrap; word-break:break-word; max-height:50vh; overflow:auto; font-family: ui-monospace, monospace; font-size:12px; }
+  .ev { color:#6f6; font-weight:700; }
+  .warn { color:#fb6; }
+  .hint { color:#9aa; font-size:12px; }
+</style>
+</head>
+<body>
+<h1>MEMED sandbox — captura do evento de conclusão da prescrição</h1>
+<p class="hint">
+  Objetivo: descobrir o <b>nome real</b> do evento que dispara quando o médico conclui a
+  prescrição no widget e o <b>shape do payload</b> (id da prescrição + array de medicamentos).
+  Isso fecha a incógnita do ADR-024 e o gate aberto do Tier 1 (ADR-056).
+</p>
+
+<label>Token do prescritor (saída da Parte A — REST smoke)</label>
+<input id="token" placeholder="cole o data.attributes.token aqui" />
+
+<label>Paciente — nome</label>
+<input id="pacNome" value="Paciente Teste" />
+<label>Paciente — CPF (teste)</label>
+<input id="pacCpf" value="00000000000" />
+<label>Paciente — telefone</label>
+<input id="pacTel" value="11999999999" />
+
+<button id="abrir">Carregar SDK + abrir prescrição</button>
+
+<div id="log"></div>
+
+<script>
+const SCRIPT_URL = "https://integrations.memed.com.br/modulos/plataforma.sinapse-prescricao/build/sinapse-prescricao.min.js";
+
+// Nomes candidatos do evento de conclusão. O 1º que disparar com payload é o real.
+const CANDIDATOS = [
+  "prescricaoImpressa", "prescricaoGerada", "prescricaoCriada", "prescricaoFinalizada",
+  "prescricaoSalva", "prescricaoConcluida", "prescription:print", "prescriptionPrint",
+  "plataforma.prescricao:prescricaoImpressa", "core:moduleInit",
+];
+
+const logEl = document.getElementById("log");
+function log(msg, cls) {
+  const t = new Date().toISOString().slice(11, 19);
+  const line = document.createElement("div");
+  if (cls) line.className = cls;
+  line.textContent = `[${t}] ${msg}`;
+  logEl.appendChild(line);
+  logEl.scrollTop = logEl.scrollHeight;
+  // eslint-disable-next-line no-console
+  console.log("[memed-smoke]", msg);
+}
+
+function dump(obj) {
+  try { return JSON.stringify(obj, (k, v) => (typeof v === "function" ? "[fn]" : v), 2); }
+  catch { return String(obj); }
+}
+
+function registrarEvento(Md, nome) {
+  try {
+    Md.event?.add?.(nome, (data) => {
+      log(`EVENTO DISPAROU: "${nome}"`, "ev");
+      log("payload:\n" + dump(data), "ev");
+    });
+  } catch (e) { log(`falha ao registrar "${nome}": ${e}`, "warn"); }
+}
+
+// Best-effort: tenta espiar QUALQUER evento, caso o dispatcher do hub seja acessível.
+function instalarSpyGlobal(Hub) {
+  try {
+    const ev = Hub?.event;
+    if (!ev) return;
+    for (const chave of ["dispatch", "emit", "trigger", "fire"]) {
+      if (typeof ev[chave] === "function") {
+        const orig = ev[chave].bind(ev);
+        ev[chave] = function (nome, ...rest) {
+          log(`SPY ${chave}("${nome}")`, "ev");
+          if (rest?.length) log("spy args:\n" + dump(rest.length === 1 ? rest[0] : rest), "ev");
+          return orig(nome, ...rest);
+        };
+        log(`spy global instalado em Hub.event.${chave}()`);
+      }
+    }
+  } catch (e) { log("spy global não instalável: " + e, "warn"); }
+}
+
+document.getElementById("abrir").addEventListener("click", () => {
+  const token = document.getElementById("token").value.trim();
+  if (!token) { log("cole o token primeiro.", "warn"); return; }
+
+  const paciente = {
+    external_id: "smoke-paciente-001",
+    nome: document.getElementById("pacNome").value,
+    cpf: document.getElementById("pacCpf").value,
+    telefone: document.getElementById("pacTel").value,
+  };
+
+  log("injetando SDK…");
+  const s = document.createElement("script");
+  s.src = SCRIPT_URL;
+  s.type = "text/javascript";
+  s.setAttribute("data-token", token);
+  s.async = true;
+  s.onerror = () => log("falha ao carregar o SDK (rede/CORS). Sirva via http: python3 -m http.server", "warn");
+  s.onload = () => {
+    log("SDK carregado. Inicializando…");
+    const Md = window.MdSinapsePrescricao;
+    const Hub = window.MdHub;
+    if (!Md || !Hub) { log("MdSinapsePrescricao/MdHub ausentes.", "warn"); return; }
+
+    instalarSpyGlobal(Hub);
+    CANDIDATOS.forEach((n) => registrarEvento(Md, n));
+    log("listeners registrados: " + CANDIDATOS.join(", "));
+
+    const abrirModulo = async () => {
+      try {
+        await Hub.command.send("plataforma.prescricao", "setPaciente", paciente);
+        await Hub.module.show("plataforma.prescricao");
+        log("módulo de prescrição aberto. PRESCREVA um medicamento de teste e CONCLUA/IMPRIMA.");
+      } catch (e) { log("erro ao abrir módulo: " + dump(e), "warn"); }
+    };
+
+    // setPaciente só funciona após o módulo inicializar.
+    Md.event?.add?.("core:moduleInit", async (module) => {
+      log("core:moduleInit: " + dump(module));
+      if (module?.name && module.name !== "plataforma.prescricao") return;
+      await abrirModulo();
+    });
+    // fallback: alguns ambientes já têm o módulo pronto.
+    setTimeout(abrirModulo, 1500);
+  };
+  document.body.appendChild(s);
+});
+</script>
+</body>
+</html>

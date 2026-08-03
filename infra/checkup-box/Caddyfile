@@ -1,0 +1,8 @@
+checkup.cerebroamigo.com.br {
+	encode gzip
+	reverse_proxy 127.0.0.1:3001
+}
+
+www.checkup.cerebroamigo.com.br {
+	redir https://checkup.cerebroamigo.com.br{uri} 301
+}

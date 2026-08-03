@@ -1,0 +1,8 @@
+[Unit]
+Description=Backup diario do Postgres clinico para S3 (ADR-079)
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/cerebro-amigo-v3/src/infra/clinical-box/backup-pgdump.sh

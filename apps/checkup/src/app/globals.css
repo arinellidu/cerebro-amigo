@@ -1,0 +1,426 @@
+@import 'tailwindcss';
+
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  --background: #F9FAFB;
+  --foreground: #0F2137;
+  --card: #FFFFFF;
+  --card-foreground: #0F2137;
+  --popover: #FFFFFF;
+  --popover-foreground: #0F2137;
+
+  --primary: #5E4B8B;
+  --primary-foreground: #FFFFFF;
+  --secondary: #EFEAF6;
+  --secondary-foreground: #4A3A70;
+
+  --muted: #F1F5F9;
+  --muted-foreground: #64748B;
+
+  --accent: #E57373;
+  --accent-foreground: #FFFFFF;
+
+  --destructive: #EF4444;
+  --destructive-foreground: #FFFFFF;
+
+  --border: #E2E8F0;
+  --input: #E2E8F0;
+  --ring: #5E4B8B;
+
+  --radius: 0.75rem;
+
+  --purple: #5E4B8B;
+  --purple-light: #7A66A8;
+  --purple-dark: #4A3A70;
+  --navy: #0F2137;
+  --coral: #E57373;
+  --success: #10B981;
+}
+/* NÃO redefinir --font-inter / --font-playfair aqui: o next/font as injeta na
+   classe do <html> (fonte self-hosted + fallback metric-adjusted). Um literal
+   em :root tem a MESMA especificidade e poderia vencer na cascata, sombreando
+   a fonte baixada → FOIT/serif do SO. Fonte = só next/font. */
+
+/* ──────────────────────────────────────────────────────────────────────────
+   Neural Noir — tema do Cérebro Amigo (idêntico ao site principal; decisão do
+   dono 2026-06-12, sobrepõe o "calmo claro" anterior). Aplicado no <body> via
+   `.theme-noir`. EXCEÇÕES deliberadas (clinical-safety): /crise e os callouts
+   de apoio/aviso permanecem ILHAS CLARAS com texto escuro literal (máxima
+   legibilidade p/ quem está em sofrimento). Sem partículas/canvas — só aurora CSS.
+   ────────────────────────────────────────────────────────────────────────── */
+.theme-noir {
+  --background: #07070D;          /* deep space */
+  --foreground: #ECEBF5;          /* ~14:1 */
+  --card: #0E0E18;
+  --card-foreground: #ECEBF5;
+  --popover: #12121F;
+  --popover-foreground: #ECEBF5;
+
+  --primary: #9486C9;             /* roxo claro — acento frio */
+  --primary-foreground: #07070D;
+  --secondary: #171426;
+  --secondary-foreground: #CFC6E6;
+
+  --muted: #14141F;
+  --muted-foreground: #9B96B5;    /* ~5.4:1 */
+
+  --accent: #E57373;              /* CORAL — único calor humano */
+  --accent-foreground: #07070D;
+
+  --destructive: #F26464;
+  --destructive-foreground: #07070D;
+
+  --border: #20202E;
+  --input: #20202E;
+  --ring: #9486C9;
+
+  /* marca sobre o noir */
+  --purple: #9486C9;
+  --purple-light: #B3A6DA;
+  --purple-dark: #CFC6E6;         /* em noir, "dark" vira o tom MAIS claro (hover/selected) */
+  --coral: #E57373;
+  --success: #34D399;
+
+  /* átomos do noir */
+  --noir-line: #2A2A3D;
+  --noir-node: #6E5FB0;           /* nós do campo neural (canvas) — mesmo token do site principal */
+  --noir-node-active: #B3A6DA;    /* nó/sinapse sob o cursor */
+  --noir-glow-purple: rgba(148, 134, 201, 0.45);
+  --noir-aurora-1: rgba(110, 95, 176, 0.22);
+  --noir-aurora-2: rgba(229, 115, 115, 0.12);
+  --noir-aurora-3: rgba(148, 134, 201, 0.10);
+  --noir-glass-bg: rgba(18, 18, 30, 0.55);
+  --noir-glass-bg-deep: rgba(20, 20, 33, 0.78);
+  --noir-glass-border: rgba(180, 166, 218, 0.14);
+}
+
+/* Tokens → utilities (Tailwind 4). IMPORTANTE: a sintaxe `text-[--var]` do
+   Tailwind 3 compila CSS INVÁLIDO no 4 (`color: --var`) — todo uso de cor de
+   marca passa por este mapa (`text-coral`, `bg-purple`, `border-border`…). */
+@theme inline {
+  --font-sans: var(--font-inter, system-ui), system-ui, sans-serif;
+  --font-display: var(--font-playfair, Georgia), Georgia, 'Times New Roman', serif;
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --color-purple: var(--purple);
+  --color-purple-light: var(--purple-light);
+  --color-purple-dark: var(--purple-dark);
+  --color-navy: var(--navy);
+  --color-coral: var(--coral);
+  --color-success: var(--success);
+  --color-noir-line: var(--noir-line);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+/* ── Atmosfera (camadas fixas, só CSS — sem canvas/partículas) ────────────
+   Tudo em @layer components: utilities do Tailwind precisam poder sobrescrever
+   (ex.: hover:border-purple/40 num .glass-noir). */
+@layer components {
+
+/* Aurora de página: fica num div fixo no layout, atrás de tudo. */
+.noir-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: -10;
+  pointer-events: none;
+  background:
+    radial-gradient(58% 48% at 50% -10%, var(--noir-aurora-1), transparent 70%),
+    radial-gradient(42% 38% at 88% 16%, var(--noir-aurora-2), transparent 70%),
+    radial-gradient(40% 42% at 8% 62%, var(--noir-aurora-3), transparent 72%),
+    radial-gradient(50% 40% at 70% 96%, var(--noir-aurora-1), transparent 75%);
+}
+
+/* Aurora VIVA — só nas landings (motor de aquisição), nunca no fluxo clínico.
+   A .noir-backdrop é irmã do conteúdo no <body>, então alcançamos via
+   `body:has(main.landing-aurora)`. Quiz/resultado/crise/evolucao não levam a
+   marca → seguem com o backdrop estático acima (frame de LCP intacto).
+   Movimento só em transform/opacity (GPU-composited, sem repaint de color-stops
+   → protege LCP/CLS). Canvas-free, dependency-free. Sem sintaxe [--var]. */
+body:has(main.landing-aurora) .noir-backdrop {
+  overflow: hidden; /* contém as pseudo-camadas oversize */
+}
+body:has(main.landing-aurora) .noir-backdrop::before,
+body:has(main.landing-aurora) .noir-backdrop::after {
+  content: "";
+  position: absolute;
+  inset: -25%; /* oversize: o drift nunca revela borda */
+  pointer-events: none;
+  will-change: transform, opacity;
+}
+/* Camada A — massas roxas, deriva diagonal + respiração. */
+body:has(main.landing-aurora) .noir-backdrop::before {
+  background:
+    radial-gradient(48% 42% at 42% 8%, var(--noir-aurora-1), transparent 70%),
+    radial-gradient(38% 38% at 10% 60%, var(--noir-aurora-3), transparent 72%);
+  animation:
+    aurora-drift-a 34s ease-in-out infinite alternate,
+    aurora-breathe 22s ease-in-out infinite;
+}
+/* Camada B — acento coral + roxo baixo, deriva oposta (parallax). */
+body:has(main.landing-aurora) .noir-backdrop::after {
+  background:
+    radial-gradient(36% 34% at 86% 18%, var(--noir-aurora-2), transparent 70%),
+    radial-gradient(44% 38% at 72% 94%, var(--noir-aurora-1), transparent 75%);
+  animation:
+    aurora-drift-b 41s ease-in-out infinite alternate,
+    aurora-breathe 28s ease-in-out infinite reverse;
+}
+@keyframes aurora-drift-a {
+  from { transform: translate3d(-3%, -2%, 0) scale(1.04); }
+  to   { transform: translate3d( 4%,  3%, 0) scale(1.10); }
+}
+@keyframes aurora-drift-b {
+  from { transform: translate3d( 3%,  2%, 0) scale(1.06); }
+  to   { transform: translate3d(-4%, -3%, 0) scale(1.12); }
+}
+@keyframes aurora-breathe {
+  0%, 100% { opacity: 0.85; }
+  50%      { opacity: 1; }
+}
+/* Mobile: aurora é o tráfego dominante do checkup. Mantém o parallax das duas
+   camadas (transform/opacity = GPU-composited, sem repaint → LCP/CLS intactos),
+   só desacelera o drift p/ poupar bateria. prefers-reduced-motion ainda zera tudo. */
+@media (max-width: 640px) {
+  body:has(main.landing-aurora) .noir-backdrop::before {
+    animation:
+      aurora-drift-a 48s ease-in-out infinite alternate,
+      aurora-breathe 30s ease-in-out infinite;
+  }
+  body:has(main.landing-aurora) .noir-backdrop::after {
+    animation:
+      aurora-drift-b 56s ease-in-out infinite alternate,
+      aurora-breathe 36s ease-in-out infinite reverse;
+  }
+}
+
+/* Malha neural sutil — linhas finas com fade radial (lembra o site principal). */
+.noir-grid {
+  position: fixed;
+  inset: 0;
+  z-index: -10;
+  pointer-events: none;
+  background-image:
+    linear-gradient(to right, rgba(148, 134, 201, 0.05) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(148, 134, 201, 0.05) 1px, transparent 1px);
+  background-size: 56px 56px;
+  -webkit-mask-image: radial-gradient(72% 56% at 50% 12%, black 30%, transparent 100%);
+  mask-image: radial-gradient(72% 56% at 50% 12%, black 30%, transparent 100%);
+}
+
+/* Aurora local (dentro de cards/CTAs com overflow-hidden). */
+.aurora {
+  background:
+    radial-gradient(60% 55% at 50% -8%, var(--noir-aurora-1), transparent 70%),
+    radial-gradient(45% 45% at 85% 22%, var(--noir-aurora-2), transparent 70%),
+    radial-gradient(40% 40% at 12% 70%, var(--noir-aurora-1), transparent 72%);
+}
+
+/* ── Vidro ──────────────────────────────────────────────────────────────── */
+
+.glass-noir {
+  background: var(--noir-glass-bg);
+  backdrop-filter: blur(24px) saturate(1.4);
+  -webkit-backdrop-filter: blur(24px) saturate(1.4);
+  border: 1px solid var(--noir-glass-border);
+}
+
+/* Vidro mais denso p/ blocos de conteúdo que precisam de presença. */
+.glass-noir-deep {
+  background: var(--noir-glass-bg-deep);
+  backdrop-filter: blur(28px) saturate(1.4);
+  -webkit-backdrop-filter: blur(28px) saturate(1.4);
+  border: 1px solid var(--noir-glass-border);
+  box-shadow:
+    inset 0 1px 0 rgba(236, 235, 245, 0.05),
+    0 24px 64px -32px rgba(0, 0, 0, 0.85);
+}
+
+/* Hairline divisória com fade nas pontas. */
+.hairline {
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--noir-line) 18%, var(--noir-line) 82%, transparent);
+}
+
+/* ── Tipografia de marca ────────────────────────────────────────────────── */
+
+.eyebrow {
+  font-family: var(--font-mono, ui-monospace), ui-monospace, monospace;
+  font-size: 0.72rem;
+  font-weight: 500;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--coral);
+}
+
+/* Gradiente de destaque em trechos de headline (Playfair). */
+.text-aurora {
+  background: linear-gradient(115deg, var(--purple-dark) 0%, var(--purple) 55%, var(--purple-light) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* ── Botões ─────────────────────────────────────────────────────────────── */
+
+.btn-noir {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+  min-height: 52px;
+  padding: 0.9rem 2rem;
+  border-radius: 14px;
+  font-weight: 600;
+  font-size: 1.0625rem;
+  line-height: 1.2;
+  color: var(--primary-foreground);
+  background: linear-gradient(160deg, var(--purple-light), var(--purple) 60%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.28),
+    0 0 0 1px rgba(148, 134, 201, 0.35),
+    0 12px 40px -14px var(--noir-glow-purple);
+  transition: transform 0.18s ease, box-shadow 0.25s ease, filter 0.18s ease;
+}
+.btn-noir:hover {
+  filter: brightness(1.07);
+  transform: translateY(-1px);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.28),
+    0 0 0 1px rgba(148, 134, 201, 0.45),
+    0 0 56px -10px var(--noir-glow-purple);
+}
+.btn-noir:active {
+  transform: translateY(0) scale(0.99);
+  filter: brightness(0.98);
+}
+
+.btn-ghost-noir {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  min-height: 48px;
+  padding: 0.8rem 1.5rem;
+  border-radius: 14px;
+  font-weight: 500;
+  color: var(--secondary-foreground);
+  border: 1px solid var(--noir-glass-border);
+  background: rgba(23, 20, 38, 0.4);
+  transition: border-color 0.2s ease, color 0.2s ease, background 0.2s ease;
+}
+.btn-ghost-noir:hover {
+  border-color: var(--purple);
+  color: var(--foreground);
+  background: var(--secondary);
+}
+
+/* ── Movimento (page-load reveal escalonado; reduced-motion zera tudo) ──── */
+
+@keyframes rise-in {
+  from { opacity: 0; transform: translateY(18px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.reveal { animation: rise-in 0.65s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.reveal-1 { animation-delay: 0.07s; }
+.reveal-2 { animation-delay: 0.14s; }
+.reveal-3 { animation-delay: 0.21s; }
+.reveal-4 { animation-delay: 0.3s; }
+.reveal-5 { animation-delay: 0.4s; }
+
+/* Transição suave entre perguntas do quiz ("ritmo do teste"). */
+@keyframes quiz-step-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.quiz-step-in {
+  animation: quiz-step-in 0.32s ease-out both;
+}
+
+/* Opções da pergunta entram em cascata (delay inline por índice). */
+@keyframes quiz-opt-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.quiz-opt-in {
+  animation: quiz-opt-in 0.3s ease-out both;
+}
+
+/* Arco do medidor: de vazio (--gauge-circ) até o strokeDashoffset inline do SVG. */
+@keyframes gauge-in {
+  from { stroke-dashoffset: var(--gauge-circ, 326.7); }
+}
+.gauge-arc {
+  animation: gauge-in 1s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* Faixa de risco entra após o gauge — sobriedade, sem dramatização. */
+.reveal-band  { animation-delay: 0.85s; }
+.reveal-band-2 { animation-delay: 1s; }
+
+} /* fim @layer components */
+
+/* ── A11y / base ────────────────────────────────────────────────────────── */
+
+.theme-noir :is(a, button, input, [role='radio']):focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 3px;
+}
+
+.theme-noir ::selection {
+  background: rgba(148, 134, 201, 0.35);
+  color: var(--foreground);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-inter);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+  /* Aurora viva descansa em estado neutro (não num frame aleatório do drift). */
+  body:has(main.landing-aurora) .noir-backdrop::before,
+  body:has(main.landing-aurora) .noir-backdrop::after {
+    animation: none !important;
+    transform: none !important;
+    opacity: 1 !important;
+  }
+}

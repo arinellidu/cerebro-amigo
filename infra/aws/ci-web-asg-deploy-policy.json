@@ -1,0 +1,17 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "WebImageTagPut",
+      "Effect": "Allow",
+      "Action": "ssm:PutParameter",
+      "Resource": "arn:aws:ssm:sa-east-1:004177894935:parameter/cerebro-amigo/web/image-tag"
+    },
+    {
+      "Sid": "WebAsgRefresh",
+      "Effect": "Allow",
+      "Action": "autoscaling:StartInstanceRefresh",
+      "Resource": "arn:aws:autoscaling:sa-east-1:004177894935:autoScalingGroup:*:autoScalingGroupName/cerebro-web-asg"
+    }
+  ]
+}

@@ -1,0 +1,30 @@
+# deploy/compose.snippet.yaml
+# Acrescentar ao docker-compose de produção como 6º serviço.
+# Atenção: t3.small tem 2 GB. Limites abaixo são deliberadamente apertados;
+# se a soma dos serviços passar de ~1.7 GB, subir para t3.medium.
+
+  checkup:
+    image: ${ECR_REGISTRY}/cerebro-amigo-checkup:latest
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    environment:
+      NODE_ENV: production
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY} # SSM Parameter Store (SecureString), injetada no deploy — nunca comitar
+      DATABASE_URL: ${CHECKUP_DATABASE_URL} # RDS existente, schema "checkup"
+      NEXT_PUBLIC_SITE_URL: https://checkup.cerebroamigo.com.br
+      QR_TARGET_URL: https://www.cerebroamigo.com.br/medicos
+    mem_limit: 256m
+    cpus: 0.5
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3001/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+# DNS: apontar checkup.cerebroamigo.com.br para a EC2 e rotear por Host no
+# proxy reverso existente. Se ainda não houver proxy na frente dos serviços,
+# adicionar Caddy (TLS automático) roteando :3000 (web) e :3001 (checkup).
+#
+# CI: duplicar o job de build do apps/web no workflow do GitHub Actions
+# (build da imagem cerebro-amigo-checkup → push ECR → deploy via SSM).

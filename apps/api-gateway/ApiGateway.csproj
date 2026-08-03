@@ -1,0 +1,52 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>ApiGateway</RootNamespace>
+    <AssemblyName>ApiGateway</AssemblyName>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <!-- CS8604: Possible null reference argument — atrapalha chamadas a ExecuteSqlRawAsync (params object[]).
+         Os SQLs aceitam parâmetros nulos nativamente; tratar como warning resolveria, mas mantemos build estrito. -->
+    <NoWarn>CA1014;CA2007;CS8604</NoWarn>
+    <DockerDefaultTargetOS>Linux</DockerDefaultTargetOS>
+    <UserSecretsId>agentes-api-gateway-2026</UserSecretsId>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Azure Blob Storage — SAS de upload/download das features de arquivo (ADR-082) -->
+    <PackageReference Include="Azure.Storage.Blobs" Version="12.24.0" />
+    <!-- ASP.NET Core OpenAPI 3.1 nativo do .NET 10 -->
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.0" />
+    <!-- Pin direto: a transitiva Microsoft.OpenApi 2.0.0 tem advisory NU1903
+         (GHSA-v5pm-xwqc-g5wc) e o restore trata como erro — 2.7.5 é a corrigida. -->
+    <PackageReference Include="Microsoft.OpenApi" Version="2.7.5" />
+
+    <!-- EF Core 10 + Postgres com JSONB nativo -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="10.0.1" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" Version="10.0.1" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.1">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.0" />
+
+    <!-- snake_case: usuario_id, criado_em, etc. -->
+    <PackageReference Include="EFCore.NamingConventions" Version="10.0.1" />
+
+    <!-- Auth -->
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.0" />
+
+    <!-- Sentry — rastreio de erros do backend (LGPD: SendDefaultPii=false) -->
+    <PackageReference Include="Sentry.AspNetCore" Version="5.5.1" />
+
+    <!-- HTTP resilience (Polly + Microsoft.Extensions.Http.Resilience) -->
+    <PackageReference Include="Microsoft.Extensions.Http.Resilience" Version="10.0.0" />
+
+    <!-- Password hashing: bcrypt (migração gradual de PBKDF2) -->
+    <PackageReference Include="BCrypt.Net-Next" Version="4.0.3" />
+  </ItemGroup>
+
+</Project>

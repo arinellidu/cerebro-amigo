@@ -1,0 +1,327 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  Frontend web (apps/web — dashboard medico + portal paciente /p/* + BFF) migrado
+  da Vercel para EC2 sa-east-1 em box proprio — ALB + Auto Scaling Group de t3.small,
+  escala horizontal por CPU. Mata cold start (container node server.js sempre quente)
+  e sai da Vercel. Clone do checkup-asg-alb.yaml (ADR-045) adaptado: porta 3000, IAM
+  minima sem SES/clinico, backend via API_GATEWAY_URL (box separado, NAO mais DNS do
+  compose), NEXT_SERVER_ACTIONS_ENCRYPTION_KEY do SSM (consistencia entre instancias).
+  Ver docs/runbooks/web-vercel-to-ec2-env.md. App e stateless (auth = JWT cookie, sem
+  sticky session); ISR multi-instancia diverge ate ter cache handler compartilhado.
+
+Parameters:
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Default: vpc-0edf8eb7d2e60b397
+  SubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+    Default: "subnet-080b40f72f1971227,subnet-0c781b1f0ea120f58,subnet-026f35019da57ea52"
+    Description: 3 subnets publicas (sa-east-1a/1b/1c). ALB exige >=2 AZs.
+  AcmCertificateArn:
+    Type: String
+    Description: >-
+      ARN do cert ACM cobrindo www.cerebroamigo.com.br E cerebroamigo.com.br (SAN/apex),
+      validado por DNS ANTES do deploy. Precisa do apex p/ o redirect apex->www no ALB.
+  WebImageTag:
+    Type: String
+    Default: latest
+    Description: Tag da imagem no ECR cerebro-amigo/web (use o SHA do deploy em prod).
+  ApiGatewayUrl:
+    Type: String
+    Default: https://api.cerebroamigo.com.br
+    Description: >-
+      URL que o BFF usa p/ achar o gateway (.NET) no box CLINICO. Box separado quebra
+      o http://api-gateway:5000 do compose. Default = endpoint publico (TLS, zero
+      mudanca de SG, funciona dia 1). Hardening (latencia + interno LGPD): trocar p/
+      http://<ip-privado-box-clinico>:5050 e liberar o ingress 5050 no SG do box clinico
+      a partir do InstanceSg deste stack (ver Output WebInstanceSgId).
+  InstanceType:
+    Type: String
+    Default: t3.small
+    Description: t3.small (2GB) basta p/ 1 Next standalone (= checkup). t3.medium p/ folga.
+  MinSize:
+    Type: Number
+    Default: 1
+    Description: >-
+      Piso do ASG. 1 = mais barato (credito AWS secou) com gap de ~minutos enquanto o
+      ASG recria instancia. 2 = zero-gap HA (AZs diferentes). DesiredCapacity = MinSize.
+  MaxSize:
+    Type: Number
+    Default: 4
+  TargetCpuPercent:
+    Type: Number
+    Default: 60
+    Description: Target tracking — ASG mira esta media de CPU%.
+  LatestAmiId:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64
+    Description: AL2023 x86_64 (casa com t3.small). t4g/ARM exige trocar p/ ...-arm64 + imagem arm64 no CI.
+  CfOriginSecret:
+    Type: String
+    NoEcho: true
+    Default: ""
+    Description: >-
+      Valor de X-CF-Origin-Secret se for por CloudFront na frente (mesmo padrao do
+      checkup/ADR-047). Vazio = sem CloudFront (a rule do header nao e criada).
+
+Conditions:
+  HasCfOriginSecret: !Not [ !Equals [ !Ref CfOriginSecret, "" ] ]
+
+Resources:
+
+  # ── SG do ALB: 80/443 do mundo ────────────────────────────────────────────
+  AlbSg:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: web ALB - entrada publica 80/443
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - { IpProtocol: tcp, FromPort: 80,  ToPort: 80,  CidrIp: 0.0.0.0/0, Description: HTTP (redirect 443) }
+        - { IpProtocol: tcp, FromPort: 443, ToPort: 443, CidrIp: 0.0.0.0/0, Description: HTTPS }
+      Tags: [ { Key: Name, Value: cerebro-web-alb-sg } ]
+
+  # ── SG das instancias: SO recebe do ALB na 3000 (sem inbound publico, sem SSH) ──
+  InstanceSg:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: web instancias - so do ALB na 3000; gestao via SSM
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 3000
+          ToPort: 3000
+          SourceSecurityGroupId: !Ref AlbSg
+          Description: app port, so do ALB
+      Tags: [ { Key: Name, Value: cerebro-web-instance-sg } ]
+
+  # ── IAM minima: SSM + ECR pull web + logs. SEM SES, SEM Bedrock, SEM perms clinicas. ──
+  InstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: EC2-Web
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: ec2.amazonaws.com }
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+      Policies:
+        - PolicyName: WebEcrPull
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: ecr:GetAuthorizationToken
+                Resource: "*"
+              - Effect: Allow
+                Action: [ ecr:BatchGetImage, ecr:GetDownloadUrlForLayer, ecr:BatchCheckLayerAvailability ]
+                Resource: !Sub arn:aws:ecr:${AWS::Region}:${AWS::AccountId}:repository/cerebro-amigo/web
+        - PolicyName: WebLogs
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: [ logs:CreateLogStream, logs:PutLogEvents, logs:CreateLogGroup, logs:DescribeLogStreams ]
+                Resource: !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/cerebro-amigo/web:*
+        - PolicyName: WebSsmParams
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: ssm:GetParameter
+                Resource: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/cerebro-amigo/web/*
+              - Effect: Allow
+                Action: kms:Decrypt
+                Resource: !Sub arn:aws:kms:${AWS::Region}:${AWS::AccountId}:key/alias/aws/ssm
+      Tags: [ { Key: Name, Value: EC2-Web } ]
+
+  InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles: [ !Ref InstanceRole ]
+
+  # ── Target group + ALB + listeners ──────────────────────────────────────────
+  TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: cerebro-web-tg
+      VpcId: !Ref VpcId
+      Port: 3000
+      Protocol: HTTP
+      TargetType: instance
+      # /api/health = probe barato + gated por readiness (app/api/health/route.ts):
+      # devolve 200 so depois do warmup das rotas publicas, entao a instancia so vira
+      # InService quando quente (anti-cold-start). 503 enquanto aquece (fora do 200-399).
+      HealthCheckPath: /api/health
+      HealthCheckIntervalSeconds: 15
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 3
+      Matcher: { HttpCode: "200-399" }
+      TargetGroupAttributes:
+        - { Key: deregistration_delay.timeout_seconds, Value: "20" }
+
+  Alb:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: cerebro-web-alb
+      Type: application
+      Scheme: internet-facing
+      Subnets: !Ref SubnetIds
+      SecurityGroups: [ !Ref AlbSg ]
+      LoadBalancerAttributes:
+        # Default 60s derruba o SSE da conversa paciente<->IA em gaps de >60s sem
+        # byte (LLM "pensando"). 300s da folga. Caminho ASG/ALB; o Caddy fallback
+        # ja trata via flush_interval -1.
+        - { Key: idle_timeout.timeout_seconds, Value: "300" }
+
+  HttpsListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref Alb
+      Port: 443
+      Protocol: HTTPS
+      SslPolicy: ELBSecurityPolicy-TLS13-1-2-2021-06
+      Certificates: [ { CertificateArn: !Ref AcmCertificateArn } ]
+      DefaultActions:
+        - { Type: forward, TargetGroupArn: !Ref TargetGroup }
+
+  # apex (cerebroamigo.com.br) -> www, 301. Exige o apex no SAN do cert.
+  ApexRedirectRule:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Properties:
+      ListenerArn: !Ref HttpsListener
+      Priority: 10
+      Conditions:
+        - Field: host-header
+          HostHeaderConfig: { Values: [ cerebroamigo.com.br ] }
+      Actions:
+        - Type: redirect
+          RedirectConfig:
+            Host: www.cerebroamigo.com.br
+            Protocol: HTTPS
+            Port: "443"
+            Path: "/#{path}"
+            Query: "#{query}"
+            StatusCode: HTTP_301
+
+  HttpRedirect:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref Alb
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - Type: redirect
+          RedirectConfig: { Protocol: HTTPS, Port: "443", StatusCode: HTTP_301 }
+
+  # Rule p/ CloudFront na frente (opcional, mesmo padrao do checkup/ADR-047).
+  CfOriginHeaderRule:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Condition: HasCfOriginSecret
+    Properties:
+      ListenerArn: !Ref HttpRedirect
+      Priority: 1
+      Conditions:
+        - Field: http-header
+          HttpHeaderConfig:
+            HttpHeaderName: X-CF-Origin-Secret
+            Values: [ !Ref CfOriginSecret ]
+      Actions:
+        - Type: forward
+          TargetGroupArn: !Ref TargetGroup
+
+  # ── Launch template: AL2023 + docker, puxa imagem + segredos do SSM no boot ──
+  LaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateName: cerebro-web-lt
+      LaunchTemplateData:
+        ImageId: !Ref LatestAmiId
+        InstanceType: !Ref InstanceType
+        IamInstanceProfile: { Arn: !GetAtt InstanceProfile.Arn }
+        SecurityGroupIds: [ !Ref InstanceSg ]
+        MetadataOptions: { HttpTokens: required }   # IMDSv2 obrigatorio
+        TagSpecifications:
+          - ResourceType: instance
+            Tags: [ { Key: Name, Value: cerebro-web } ]
+        UserData:
+          Fn::Base64: !Sub |
+            #!/bin/bash
+            set -euo pipefail
+            dnf install -y docker
+            systemctl enable --now docker
+            REGION=${AWS::Region}
+            ECR=${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com
+            get() { aws ssm get-parameter --region $REGION --name "$1" --with-decryption --query Parameter.Value --output text; }
+            TAG=$(aws ssm get-parameter --region $REGION --name /cerebro-amigo/web/image-tag --query Parameter.Value --output text 2>/dev/null || echo "${WebImageTag}")
+            # Segredos/config server-side do BFF (SSM). NEXT_PUBLIC_* NAO entram aqui —
+            # sao build-time, ja embutidos na imagem (ver runbook + patch do Dockerfile).
+            # NEXT_SERVER_ACTIONS_ENCRYPTION_KEY: MESMO valor em toda instancia do ASG,
+            # senao Server Action quebra ao trocar de instancia. Externalizado no SSM.
+            SA_KEY=$(get /cerebro-amigo/web/server-actions-key)
+            INTERNAL=$(get /cerebro-amigo/web/internal-api-token 2>/dev/null || echo "")
+            METRICS=$(get /cerebro-amigo/web/checkup-metrics-token 2>/dev/null || echo "")
+            # ADR-074: header secreto de origem (X-Edge-Auth) p/ o gateway exposto.
+            # Graceful: vazio se o param nao existe -> gatewayFetch vira no-op (inerte).
+            EDGE=$(get /cerebro-amigo/web/edge-auth-secret 2>/dev/null || echo "")
+            aws ecr get-login-password --region $REGION | docker login --username AWS --password-stdin $ECR
+            docker rm -f web 2>/dev/null || true
+            docker run -d --name web --restart unless-stopped \
+              -p 3000:3000 --memory 1500m \
+              --log-driver=awslogs \
+              --log-opt awslogs-region=$REGION \
+              --log-opt awslogs-group=/cerebro-amigo/web \
+              --log-opt awslogs-create-group=true \
+              --log-opt awslogs-stream=web-$(hostname) \
+              -e NODE_ENV=production -e PORT=3000 -e HOSTNAME=0.0.0.0 \
+              -e NEXT_SERVER_ACTIONS_ENCRYPTION_KEY="$SA_KEY" \
+              -e API_GATEWAY_URL="${ApiGatewayUrl}" \
+              -e INTERNAL_API_TOKEN="$INTERNAL" \
+              -e EDGE_AUTH_SECRET="$EDGE" \
+              -e CHECKUP_METRICS_TOKEN="$METRICS" \
+              -e CHECKUP_METRICS_URL=https://checkup.cerebroamigo.com.br/api/funnel-metrics \
+              -e FRONTEND_URL=https://www.cerebroamigo.com.br \
+              -e PORTAL_PACIENTE_URL=https://www.cerebroamigo.com.br/p \
+              $ECR/cerebro-amigo/web:$TAG
+
+  # ── ASG + target tracking de CPU ────────────────────────────────────────────
+  Asg:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      AutoScalingGroupName: cerebro-web-asg
+      VPCZoneIdentifier: !Ref SubnetIds
+      LaunchTemplate:
+        LaunchTemplateId: !Ref LaunchTemplate
+        Version: !GetAtt LaunchTemplate.LatestVersionNumber
+      MinSize: !Ref MinSize
+      MaxSize: !Ref MaxSize
+      DesiredCapacity: !Ref MinSize
+      TargetGroupARNs: [ !Ref TargetGroup ]
+      HealthCheckType: ELB
+      HealthCheckGracePeriod: 90
+      Tags:
+        - { Key: Name, Value: cerebro-web, PropagateAtLaunch: true }
+
+  CpuTracking:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties:
+      AutoScalingGroupName: !Ref Asg
+      PolicyType: TargetTrackingScaling
+      TargetTrackingConfiguration:
+        PredefinedMetricSpecification: { PredefinedMetricType: ASGAverageCPUUtilization }
+        TargetValue: !Ref TargetCpuPercent
+
+Outputs:
+  AlbDnsName:
+    Description: Apontar www.cerebroamigo.com.br + apex (DNS) p/ este nome (CNAME/ALIAS). Cutover final.
+    Value: !GetAtt Alb.DNSName
+  WebInstanceSgId:
+    Description: >-
+      Se usar API_GATEWAY_URL privado (http://<ip-priv-clinico>:5050), adicionar este SG
+      no ingress 5050 do SG do box clinico (passo manual de perimetro).
+    Value: !Ref InstanceSg
+  AsgName:
+    Value: !Ref Asg

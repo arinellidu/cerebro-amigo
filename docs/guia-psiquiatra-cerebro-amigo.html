@@ -1,0 +1,642 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Cérebro Amigo — Guia para o Psiquiatra</title>
+<style>
+  @page {
+    size: A4;
+    margin: 18mm 16mm 16mm 16mm;
+  }
+  :root {
+    --ink: #14142B;
+    --body: #20243A;
+    --muted: #5B6072;
+    --accent: #E8645A;     /* coral Cérebro Amigo */
+    --teal: #2F8F86;
+    --indigo: #0E0E18;
+    --indigo2: #1C1C36;
+    --line: #E4E4EF;
+    --soft: #F6F6FB;
+    --amber-bg: #FFF7E8;
+    --amber-bd: #E0A33A;
+    --amber-ink: #5A3E12;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, "Helvetica Neue", Arial, sans-serif;
+    color: var(--body);
+    font-size: 10.4pt;
+    line-height: 1.55;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  h1, h2, h3, h4 {
+    font-family: Georgia, "Times New Roman", serif;
+    color: var(--ink);
+    line-height: 1.2;
+    margin: 0 0 .35em 0;
+  }
+  h2 {
+    font-size: 19pt;
+    border-bottom: 2px solid var(--accent);
+    padding-bottom: 6px;
+    margin-top: 0;
+  }
+  h3 { font-size: 13pt; margin-top: 1.1em; color: var(--ink); }
+  h4 { font-size: 11pt; margin-top: .9em; color: var(--teal); font-family: -apple-system, Arial, sans-serif; letter-spacing: .2px; }
+  p { margin: .4em 0; }
+  a { color: var(--teal); text-decoration: none; }
+  strong { color: var(--ink); }
+  ul, ol { margin: .4em 0 .6em 0; padding-left: 1.2em; }
+  li { margin: .25em 0; }
+  .eyebrow {
+    font-family: ui-monospace, Menlo, monospace;
+    font-size: 8pt;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 6px;
+  }
+  .lead { font-size: 11.5pt; color: var(--ink); }
+  .muted { color: var(--muted); }
+
+  /* ---- COVER ---- */
+  .cover {
+    background: var(--indigo);
+    color: #EDEDF6;
+    border-radius: 14px;
+    padding: 46px 40px 40px 40px;
+    margin-bottom: 18px;
+    position: relative;
+    overflow: hidden;
+  }
+  .cover::after {
+    content: "";
+    position: absolute;
+    right: -80px; top: -80px;
+    width: 320px; height: 320px;
+    background: radial-gradient(circle, rgba(232,100,90,.35), rgba(47,143,134,.10) 55%, transparent 70%);
+    border-radius: 50%;
+  }
+  .cover .brand {
+    font-family: ui-monospace, Menlo, monospace;
+    font-size: 8.5pt; letter-spacing: 3px; text-transform: uppercase;
+    color: #B9B9D6;
+  }
+  .cover h1 {
+    color: #FFFFFF;
+    font-size: 34pt;
+    margin: 14px 0 6px 0;
+  }
+  .cover .sub { font-size: 13pt; color: #C9C9E0; max-width: 80%; }
+  .cover .tag {
+    display: inline-block; margin-top: 22px;
+    background: rgba(232,100,90,.16);
+    border: 1px solid rgba(232,100,90,.5);
+    color: #F4A79F;
+    padding: 5px 12px; border-radius: 20px;
+    font-size: 9pt; letter-spacing: .5px;
+  }
+  .cover .footnote { margin-top: 26px; font-size: 8.5pt; color: #8C8CAE; }
+
+  /* ---- LAYOUT HELPERS ---- */
+  section { page-break-before: always; }
+  section.first { page-break-before: avoid; }
+  body > section:first-child { page-break-before: avoid; } /* chunk de build não inicia com página em branco */
+  .grid2 { display: flex; gap: 14px; }
+  .grid2 > div { flex: 1; }
+
+  .panel {
+    background: var(--soft);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 12px 14px;
+    margin: 10px 0;
+  }
+  .panel h4 { margin-top: 0; }
+
+  .safe {
+    background: var(--amber-bg);
+    border: 1px solid var(--amber-bd);
+    border-left: 4px solid var(--amber-bd);
+    color: var(--amber-ink);
+    border-radius: 8px;
+    padding: 11px 14px;
+    margin: 12px 0;
+    font-size: 10pt;
+  }
+  .safe strong { color: var(--amber-ink); }
+  .safe .label {
+    font-family: ui-monospace, Menlo, monospace;
+    font-size: 8pt; letter-spacing: 1.5px; text-transform: uppercase;
+    display: block; margin-bottom: 3px;
+  }
+
+  .rule {
+    border-left: 4px solid var(--accent);
+    background: #FCEFEE;
+    padding: 10px 14px;
+    border-radius: 8px;
+    margin: 10px 0;
+    color: var(--ink);
+  }
+
+  table { width: 100%; border-collapse: collapse; margin: 10px 0; font-size: 9.4pt; }
+  th, td { text-align: left; padding: 7px 9px; vertical-align: top; border-bottom: 1px solid var(--line); }
+  th { background: var(--indigo); color: #EDEDF6; font-family: -apple-system, Arial, sans-serif; font-weight: 600; font-size: 8.6pt; letter-spacing: .3px; }
+  tr:nth-child(even) td { background: #FAFAFE; }
+  td.k { font-weight: 600; color: var(--ink); white-space: nowrap; }
+
+  .pill {
+    display: inline-block; background: #EAF4F2; color: var(--teal);
+    border: 1px solid #BFE0DB; border-radius: 5px;
+    padding: 1px 7px; font-size: 8.2pt; font-weight: 600;
+  }
+  .pill.coral { background: #FCEAE8; color: var(--accent); border-color: #F3C4BF; }
+
+  .toc { display: grid; grid-template-columns: 1fr 1fr; column-gap: 26px; font-size: 10pt; }
+  .toc a { color: var(--body); display: block; padding: 3px 0; border-bottom: 1px dotted var(--line); }
+  .toc .n { color: var(--accent); font-weight: 700; font-family: ui-monospace, Menlo, monospace; margin-right: 8px; }
+
+  .kicker { color: var(--teal); font-weight: 600; }
+  footer.pg { margin-top: 22px; padding-top: 8px; border-top: 1px solid var(--line); font-size: 8pt; color: var(--muted); display:flex; justify-content: space-between; }
+  .nobreak { page-break-inside: avoid; }
+</style>
+</head>
+<body>
+
+<!-- ===================== CAPA ===================== -->
+<div class="cover">
+  <div class="brand">Cérebro Amigo · by Arinelli</div>
+  <h1>Cérebro Amigo</h1>
+  <div class="sub">O cuidado que continua entre uma consulta e outra — um guia para o psiquiatra.</div>
+  <span class="tag">Inclui o Check-up Mental · triagem pública gratuita</span>
+  <div class="footnote">Plataforma de psiquiatria · dados no Brasil (LGPD) · você sempre no comando da decisão clínica.</div>
+</div>
+
+<p class="lead">Este guia explica, sem jargão técnico, o que o Cérebro Amigo faz pela sua prática,
+como ele mantém <strong>você no centro de toda decisão clínica</strong>, e como o Check-up Mental
+pode trazer novos pacientes até o seu consultório. Capítulos independentes — vá direto ao que interessar (por exemplo, o capítulo 10, sobre o Check-up).</p>
+
+<div class="panel">
+  <div class="eyebrow">O essencial em uma frase</div>
+  <p style="margin:0">O Cérebro Amigo organiza o acompanhamento dos seus pacientes <strong>entre as
+  consultas</strong> — check-ins de humor, adesão à medicação, diário, sinais de risco — e leva isso
+  a você de forma resumida e acionável. <strong>A inteligência artificial nunca diagnostica, nunca
+  prescreve e nunca ajusta dose.</strong> Ela apenas organiza, rascunha e sinaliza; quem decide é você.</p>
+</div>
+
+<div class="toc">
+  <a href="#s1"><span class="n">01</span>O problema que ele resolve</a>
+  <a href="#s2"><span class="n">02</span>Princípio nº 1: você no comando</a>
+  <a href="#s3"><span class="n">03</span>Como o protocolo de crise funciona</a>
+  <a href="#s4"><span class="n">04</span>Seu painel: o que você enxerga</a>
+  <a href="#s5"><span class="n">05</span>Os assistentes que trabalham para você</a>
+  <a href="#s6"><span class="n">06</span>Cuidado por medida (PHQ-9 / GAD-7)</a>
+  <a href="#s7"><span class="n">07</span>Consulta, prescrição e teleconsulta</a>
+  <a href="#s8"><span class="n">08</span>O lado do paciente (aplicativo)</a>
+  <a href="#s9"><span class="n">09</span>Privacidade, sigilo e auditoria</a>
+  <a href="#s10"><span class="n">10</span>Check-up Mental: triagem e novos pacientes</a>
+  <a href="#s11"><span class="n">11</span>Como começar</a>
+  <a href="#s12"><span class="n">12</span>Perguntas frequentes</a>
+</div>
+
+<footer class="pg"><span>Cérebro Amigo — Guia para o Psiquiatra</span><span>1</span></footer>
+
+<!-- ===================== 01 ===================== -->
+<section id="s1" class="first">
+  <div class="eyebrow">Capítulo 01</div>
+  <h2>O problema que ele resolve</h2>
+  <p class="lead">Entre uma consulta e a próxima, o paciente fica sozinho com a doença. É nesse
+  intervalo que a adesão cai, o humor oscila e os primeiros sinais de recaída aparecem — e é
+  exatamente o período em que você tem menos visibilidade.</p>
+
+  <p>O acompanhamento psiquiátrico tradicional enxerga o paciente em fotografias espaçadas: o que
+  acontece nas semanas entre os encontros chega tarde, incompleto ou não chega. O Cérebro Amigo
+  preenche esse intervalo de forma estruturada e segura:</p>
+
+  <ul>
+    <li><strong>Mantém contato leve e acolhedor</strong> com o paciente (humor, adesão, diário),
+      sempre sob suas regras.</li>
+    <li><strong>Organiza os sinais</strong> em uma linha do tempo clara — adesão à medicação,
+      tendências de humor e sintomas, eventos relevantes.</li>
+    <li><strong>Chama a sua atenção</strong> quando algo merece olhar: queda de adesão, retraimento,
+      mudança estatística de padrão — com base em dados objetivos, sem nunca opinar sobre o caso nem
+      tirar a decisão das suas mãos.</li>
+    <li><strong>Prepara a consulta</strong> com um resumo do que mudou desde a última vez, para você
+      começar o encontro já situado.</li>
+  </ul>
+
+  <div class="panel nobreak">
+    <div class="eyebrow">Quem usa</div>
+    <div class="grid2">
+      <div>
+        <h4>Você (médico)</h4>
+        <p style="margin:0">Um painel na web onde você vê seus pacientes, lê resumos, revisa
+        mensagens, agenda e prescreve. Cada psiquiatra enxerga apenas os seus próprios pacientes.</p>
+      </div>
+      <div>
+        <h4>Seu paciente</h4>
+        <p style="margin:0">Um aplicativo simples no celular para registrar humor, confirmar medicação,
+        escrever no diário e conversar — tudo sob sua supervisão.</p>
+      </div>
+    </div>
+  </div>
+
+  <p class="muted">Nas próximas páginas: como a segurança clínica é garantida, o que você vê no
+  painel, e como o Check-up Mental traz pacientes novos.</p>
+  <footer class="pg"><span>01 · O problema que ele resolve</span><span>2</span></footer>
+</section>
+
+<!-- ===================== 02 ===================== -->
+<section id="s2">
+  <div class="eyebrow">Capítulo 02</div>
+  <h2>Princípio nº 1: você no comando</h2>
+  <p class="lead">Antes de qualquer funcionalidade, uma regra fundadora: a inteligência artificial
+  do Cérebro Amigo <strong>não pratica medicina</strong>. Ela é uma assistente administrativa e
+  organizacional — não uma colega que opina sobre o caso.</p>
+
+  <div class="rule nobreak">
+    <strong>A IA nunca diagnostica, nunca sugere diagnóstico, nunca prescreve e nunca ajusta dose.</strong>
+    Ela organiza informação, rascunha textos para a sua revisão e sinaliza o que merece a sua atenção.
+    Toda decisão clínica é, e continua sendo, exclusivamente sua.
+  </div>
+
+  <h3>Três salvaguardas que você não vê — mas que estão sempre ativas</h3>
+
+  <h4>1 · Médico no loop</h4>
+  <p>Nenhuma resposta automática chega ao paciente sem passar por uma auditoria interna. Se a mensagem
+  fugir do que é seguro e administrativo, ela é <strong>bloqueada e encaminhada a você</strong> em vez
+  de ser enviada. O sistema prefere escalar para o humano a arriscar uma mensagem inadequada.</p>
+
+  <h4>2 · Texto sensível é pré-aprovado, não inventado</h4>
+  <p>Mensagens delicadas — em especial as de crise — usam <strong>textos fixos, revisados e
+  versionados</strong>. A IA não improvisa nessas situações. O que o paciente em sofrimento recebe é
+  um conteúdo de acolhimento pré-definido, idêntico e auditável.</p>
+
+  <h4>3 · O alerta nunca é minimizado</h4>
+  <p>Quando um assistente avalia algo como adesão ou risco, ele pode <strong>aumentar</strong> o nível
+  de atenção sobre um caso, mas nunca esconder ou minimizar um sinal que os dados já mostraram. Na
+  dúvida, ele sempre chama a sua atenção — nunca o contrário.</p>
+
+  <div class="safe nobreak">
+    <span class="label">Por que isso importa</span>
+    <strong>Saúde mental é dado sensível e a responsabilidade é do médico.</strong> Toda a engenharia
+    do produto parte do princípio de que um falso alerta a mais é aceitável, mas uma orientação
+    clínica feita por máquina não é. Você nunca será substituído pelo sistema — será liberado das
+    tarefas que não exigem o seu julgamento.
+  </div>
+
+  <footer class="pg"><span>02 · Você no comando</span><span>3</span></footer>
+</section>
+
+<!-- ===================== 03 ===================== -->
+<section id="s3">
+  <div class="eyebrow">Capítulo 03</div>
+  <h2>Como o protocolo de crise funciona</h2>
+  <p class="lead">A situação mais delicada do acompanhamento à distância é o risco agudo. Aqui o
+  Cérebro Amigo é deliberadamente conservador e totalmente determinístico — sem espaço para
+  improviso da máquina.</p>
+
+  <h3>O que acontece, passo a passo</h3>
+  <ol>
+    <li><strong>Detecção conservadora.</strong> Cada mensagem do paciente é avaliada quanto a sinais
+      de risco. Na menor dúvida, o sistema trata como crise — prefere um alarme falso a deixar passar
+      um caso real.</li>
+    <li><strong>Acolhimento imediato com texto fixo.</strong> O paciente recebe na hora um texto de
+      apoio pré-aprovado, com canais de ajuda (CVV 188, SAMU 192). Esse texto nunca é gerado por IA.</li>
+    <li><strong>Você é notificado.</strong> Um alerta de crise é registrado e enviado a você, com
+      <strong>entrega garantida</strong>: o sistema insiste e escalona até a sua confirmação de
+      recebimento.</li>
+    <li><strong>A automação pausa.</strong> As rotinas automáticas daquele paciente são suspensas e a
+      conversa é transferida para acompanhamento humano. Nada volta a rodar sozinho até a sua
+      intervenção.</li>
+    <li><strong>Tudo fica registrado.</strong> O acionamento entra em uma trilha de auditoria que não
+      pode ser apagada.</li>
+  </ol>
+
+  <div class="safe nobreak">
+    <span class="label">Triagem do Check-up também</span>
+    No Check-up Mental (triagem pública), uma resposta positiva a um item de risco — seja o item de
+    ideação do PHQ-9 ou o item de autoagressão do MSI-BPD — interrompe o questionário <strong>antes de
+    qualquer resultado</strong> e leva a uma tela de acolhimento com canais de ajuda. Sem funil
+    comercial, sem rodeios.
+  </div>
+
+  <p class="muted">O texto de crise é versionado e auditado clinicamente; sua alteração é travada
+  contra edição acidental. A retomada da automação após uma crise é sempre um ato seu, registrado.</p>
+
+  <footer class="pg"><span>03 · Protocolo de crise</span><span>4</span></footer>
+</section>
+
+<!-- ===================== 04 ===================== -->
+<section id="s4">
+  <div class="eyebrow">Capítulo 04</div>
+  <h2>Seu painel: o que você enxerga</h2>
+  <p class="lead">O painel web reúne, por paciente, tudo o que aconteceu desde a última consulta —
+  e o que merece atenção agora.</p>
+
+  <table class="nobreak">
+    <tr><th style="width:34%">Onde</th><th>O que você encontra</th></tr>
+    <tr><td class="k">Fila de atenção</td><td>Os pacientes que pedem o seu olhar primeiro: alertas de crise, quedas de adesão, sinais de risco — priorizados.</td></tr>
+    <tr><td class="k">Prontuário do paciente</td><td>Ficha, histórico, prescrições ativas e a linha do tempo clínica em um só lugar.</td></tr>
+    <tr><td class="k">Evolução</td><td>Gráficos de humor, adesão à medicação e tendências de sintomas ao longo do tempo.</td></tr>
+    <tr><td class="k">Insights</td><td>Os resumos e sinais produzidos pelos assistentes (capítulo 05), sempre como apoio à sua leitura.</td></tr>
+    <tr><td class="k">Mensagens</td><td>A conversa entre o paciente e a plataforma, com revisão e possibilidade de assumir o diálogo.</td></tr>
+    <tr><td class="k">Agenda</td><td>Consultas, disponibilidade, detecção de conflito, lembretes e agendamento pelo próprio paciente.</td></tr>
+    <tr><td class="k">Check-ins</td><td>Registros de humor e confirmações de medicação que o paciente envia entre consultas.</td></tr>
+    <tr><td class="k">Exames (no prontuário)</td><td>Acompanhamento de exames laboratoriais relevantes e avisos de pendência ou vencimento.</td></tr>
+    <tr><td class="k">Financeiro</td><td>Cobrança da sua assinatura; quais pacientes sumiram há muito tempo (para você decidir reativar o contato); e o registro que comprova o acompanhamento prestado — útil se um dia precisar demonstrar o cuidado.</td></tr>
+  </table>
+
+  <h3>Você define as regras de cada paciente</h3>
+  <p>As automações de acompanhamento não são genéricas: você configura, por paciente, o que faz
+  sentido — frequência de check-ins, lembretes de medicação, questionários. E pode pausar tudo a
+  qualquer momento. O sistema só faz o que você autorizou.</p>
+
+  <div class="panel nobreak">
+    <div class="eyebrow">Você pode editar as mensagens</div>
+    <p style="margin:0">Há um editor onde você ajusta o tom e o conteúdo das mensagens automáticas dos
+    assistentes. <strong>Exceção:</strong> os textos ligados à segurança clínica (detecção de crise e
+    auditoria de resposta) são travados — protegem você e o paciente e não podem ser enfraquecidos por
+    engano.</p>
+  </div>
+
+  <footer class="pg"><span>04 · Seu painel</span><span>5</span></footer>
+</section>
+
+<!-- ===================== 05 ===================== -->
+<section id="s5">
+  <div class="eyebrow">Capítulo 05</div>
+  <h2>Os assistentes que trabalham para você</h2>
+  <p class="lead">Nos bastidores, rotinas automáticas leem os dados do acompanhamento e produzem
+  <strong>insights para a sua leitura</strong> — nunca conselhos para o paciente, nunca decisões.
+  Cada um tem uma função estreita e bem definida.</p>
+
+  <table class="nobreak">
+    <tr><th style="width:30%">Assistente</th><th>O que entrega a você</th></tr>
+    <tr><td class="k">Resumo pré-consulta</td><td>Um briefing do que mudou nos últimos dias, pronto pouco antes da consulta agendada — para você chegar situado.</td></tr>
+    <tr><td class="k">Adesão</td><td>Taxa de doses tomadas, sequências perdidas e tendência de engajamento. O cálculo é objetivo; o assistente só destaca o que merece atenção.</td></tr>
+    <tr><td class="k">Risco silencioso</td><td>Aponta pacientes que pararam de responder logo depois de registrarem piora de humor ou queda de adesão — o retraimento que costuma passar despercebido.</td></tr>
+    <tr><td class="k">Padrões</td><td>Detecta tendências e mudanças bruscas nos sintomas registrados por cálculo objetivo, não por interpretação.</td></tr>
+    <tr><td class="k">Diário</td><td>Sintetiza, sem reproduzir literalmente, as entradas de diário que o paciente escolheu compartilhar antes da consulta.</td></tr>
+    <tr><td class="k">Desfecho</td><td>Acompanha resposta, remissão ou não-resposta em escalas após uma troca de medicação. <span class="pill">100% determinístico, sem IA</span></td></tr>
+  </table>
+
+  <div class="rule nobreak">
+    Todos os assistentes seguem a mesma regra: <strong>sugerem tópicos para você considerar</strong>,
+    em linguagem que jamais afirma diagnóstico ou conduta. Eles existem para que nada importante passe
+    batido — não para opinar sobre o caso.
+  </div>
+
+  <h3>Sob seu controle de custo e ritmo</h3>
+  <p>Esses assistentes rodam em ritmos diferentes (alguns minutos antes da consulta, outros uma vez
+  por dia). Antes de ligar uma automação nova para os seus pacientes, você pode vê-la rodar em
+  <strong>modo de teste</strong>: ela mostra o que enviaria, mas nada chega ao paciente até você
+  aprovar. Você fica no controle de quando e quanto eles trabalham.</p>
+
+  <footer class="pg"><span>05 · Assistentes</span><span>6</span></footer>
+</section>
+
+<!-- ===================== 06 ===================== -->
+<section id="s6">
+  <div class="eyebrow">Capítulo 06</div>
+  <h2>Cuidado por medida (Measurement-Based Care)</h2>
+  <p class="lead">O Cérebro Amigo facilita a prática de <strong>cuidado guiado por medida</strong>:
+  acompanhar a evolução com instrumentos validados, longitudinalmente, em vez de apenas pela
+  impressão de cada consulta.</p>
+
+  <ul>
+    <li><strong>Coleta no aplicativo.</strong> O paciente responde PHQ-9 e GAD-7 quando você programa,
+      direto no celular.</li>
+    <li><strong>Escore fiel ao instrumento.</strong> A pontuação segue exatamente a regra oficial da
+      escala. Os itens nunca são traduzidos, parafraseados ou inventados, e a IA <strong>não calcula
+      escore</strong> — isso é determinístico.</li>
+    <li><strong>Leitura longitudinal.</strong> Você vê a curva ao longo do tempo e, após uma troca de
+      conduta, o assistente de desfecho sinaliza resposta, remissão ou não-resposta segundo critérios
+      objetivos.</li>
+    <li><strong>Rede de segurança.</strong> Itens de risco em qualquer escala que os contenha — por
+      exemplo, o item de ideação do PHQ-9 — disparam o protocolo de crise (capítulo 03),
+      independentemente do escore final.</li>
+  </ul>
+
+  <div class="safe nobreak">
+    <span class="label">O que isso é — e o que não é</span>
+    As escalas são <strong>apoio à decisão</strong>, não a decisão. O sistema apresenta o número e a
+    tendência de forma determinística; o significado clínico, no contexto do paciente, é sempre você
+    quem dá.
+  </div>
+
+  <footer class="pg"><span>06 · Cuidado por medida</span><span>7</span></footer>
+</section>
+
+<!--SPLIT-->
+<!-- ===================== 07 ===================== -->
+<section id="s7">
+  <div class="eyebrow">Capítulo 07</div>
+  <h2>Consulta, prescrição e teleconsulta</h2>
+
+  <h3>Teleconsulta por vídeo</h3>
+  <p>Atendimento por vídeo dentro da própria plataforma, com mídia criptografada de ponta a ponta e
+  que <strong>não é gravada</strong> — a única exceção é o escriba (abaixo), que você ativa com o
+  consentimento do paciente. Para você é uma sala simples; para o paciente, um clique a partir do
+  aplicativo.</p>
+
+  <h3>Escriba clínico (opcional)</h3>
+  <p>Durante a teleconsulta, você pode ativar um <strong>escriba</strong> que ajuda a transformar a
+  conversa em um rascunho de evolução. É um <strong>rascunho para a sua revisão e edição</strong> —
+  nunca um registro definitivo gerado sozinho. O áudio é descartado após o processamento.</p>
+
+  <h3>Prescrição digital</h3>
+  <p>Prescrição integrada via <strong>Memed</strong>, com um <strong>verificador determinístico de
+  interações e duplicidades</strong> (baseado em base de dados farmacológica, não em IA) que sinaliza,
+  sem interpretar o caso, pontos para a sua avaliação. A decisão de prescrever, manter ou trocar é
+  sempre sua. Há ainda apoio à <strong>renovação de receitas</strong> de uso contínuo, dentro das
+  regras.</p>
+
+  <div class="rule nobreak">
+    O verificador de interações <strong>alerta</strong>, não decide. Ele existe como uma rede de
+    segurança a mais — a conduta farmacológica permanece inteiramente sob seu julgamento.
+  </div>
+
+  <h3>Agenda</h3>
+  <p>Disponibilidade, detecção de conflito de horário, lembretes automáticos de consulta (24 h e 1 h
+  antes) e a opção de o paciente agendar dentro das janelas que você abrir.</p>
+
+  <footer class="pg"><span>07 · Consulta e prescrição</span><span>8</span></footer>
+</section>
+
+<!-- ===================== 08 ===================== -->
+<section id="s8">
+  <div class="eyebrow">Capítulo 08</div>
+  <h2>O lado do paciente</h2>
+  <p class="lead">O paciente acessa um aplicativo leve pelo celular, sem precisar baixar nada de uma
+  loja. Tudo o que ele faz ali chega organizado a você — e nada de sensível roda sem a sua
+  supervisão.</p>
+
+  <table class="nobreak">
+    <tr><th style="width:30%">Recurso</th><th>Para o paciente</th></tr>
+    <tr><td class="k">Conversa</td><td>Um canal acolhedor para registrar como está. Respostas automáticas passam por auditoria; temas clínicos ou de risco escalam para você.</td></tr>
+    <tr><td class="k">Humor diário</td><td>Registro rápido de humor, que alimenta a curva de evolução.</td></tr>
+    <tr><td class="k">Diário</td><td>Texto ou áudio. O paciente escolhe o que compartilhar com você antes da consulta.</td></tr>
+    <tr><td class="k">Medicação</td><td>Confirmação de doses e lembretes — a base da métrica de adesão.</td></tr>
+    <tr><td class="k">Questionários</td><td>PHQ-9 e GAD-7, quando você programa.</td></tr>
+    <tr><td class="k">Lembretes</td><td>Notificações no celular (humor, medicação, consulta) com texto fixo e gentil.</td></tr>
+  </table>
+
+  <div class="safe nobreak">
+    <span class="label">Acolhimento, não cobrança</span>
+    Os lembretes e mensagens são escritos para <strong>acolher sem infantilizar</strong>. O tom é
+    definido com cuidado e, nas mensagens automáticas, você pode ajustá-lo. O objetivo é manter o
+    vínculo terapêutico vivo no intervalo entre consultas.
+  </div>
+
+  <footer class="pg"><span>08 · O lado do paciente</span><span>9</span></footer>
+</section>
+
+<!-- ===================== 09 ===================== -->
+<section id="s9">
+  <div class="eyebrow">Capítulo 09</div>
+  <h2>Privacidade, sigilo e auditoria</h2>
+  <p class="lead">Dado de saúde mental é informação sensível sob a LGPD. A plataforma foi construída
+  em torno disso — não como um adendo.</p>
+
+  <table class="nobreak">
+    <tr><th style="width:34%">Garantia</th><th>O que significa na prática</th></tr>
+    <tr><td class="k">Dados no Brasil</td><td>Toda a infraestrutura roda em região brasileira. Residência de dado nacional.</td></tr>
+    <tr><td class="k">Isolamento entre médicos</td><td>Cada psiquiatra acessa exclusivamente os seus pacientes. Esse isolamento é reforçado em várias camadas e testado automaticamente a cada atualização.</td></tr>
+    <tr><td class="k">Conteúdo cifrado</td><td>O conteúdo das conversas é criptografado quando armazenado.</td></tr>
+    <tr><td class="k">Sem vazar nos bastidores</td><td>Informação que identifica o paciente é removida dos registros técnicos e de diagnóstico do sistema. Conteúdo clínico não é registrado em texto puro.</td></tr>
+    <tr><td class="k">Trilha imutável</td><td>Acionamentos de crise, notificações e execuções dos assistentes ficam em registros que não podem ser apagados — sua proteção médico-legal.</td></tr>
+    <tr><td class="k">Direitos do titular</td><td>Há um console para atender solicitações do paciente sobre os próprios dados (LGPD).</td></tr>
+  </table>
+
+  <div class="rule nobreak">
+    Quando a IA precisa processar texto, ela recebe o <strong>mínimo necessário</strong> e nunca a
+    identidade do paciente junto do conteúdo clínico. Minimização de dados é regra, não exceção.
+  </div>
+
+  <footer class="pg"><span>09 · Privacidade e auditoria</span><span>10</span></footer>
+</section>
+
+<!-- ===================== 10 ===================== -->
+<section id="s10">
+  <div class="eyebrow">Capítulo 10</div>
+  <h2>Check-up Mental: triagem e novos pacientes</h2>
+  <p class="lead">O <strong>Check-up Mental</strong> é um site público e gratuito de triagem de saúde
+  mental. Para a população, é um ponto de partida honesto. Para você, é um canal de novos pacientes
+  que chegam já com um relatório em mãos.</p>
+
+  <h3>Como funciona para quem faz</h3>
+  <ul>
+    <li>A pessoa responde, de forma <strong>anônima</strong>, a um ou mais instrumentos validados.</li>
+    <li>Recebe uma devolutiva educativa (texto gerado por IA com roteiro fixo e salvaguardas, jamais
+      um diagnóstico) e um <strong>relatório em PDF</strong> para levar ao profissional de saúde.</li>
+    <li>O relatório traz um <strong>QR Code</strong> que leva ao cadastro de psiquiatras do Cérebro
+      Amigo — é assim que o paciente pode chegar até você.</li>
+  </ul>
+
+  <h3>As escalas disponíveis</h3>
+  <table class="nobreak">
+    <tr><th style="width:42%">Instrumento</th><th>Rastreia</th></tr>
+    <tr><td class="k">PHQ-9</td><td>Sintomas depressivos</td></tr>
+    <tr><td class="k">GAD-7</td><td>Sintomas de ansiedade</td></tr>
+    <tr><td class="k">ASRS-18</td><td>TDAH no adulto</td></tr>
+    <tr><td class="k">AUDIT</td><td>Uso de álcool</td></tr>
+    <tr><td class="k">MDQ</td><td>Rastreio de bipolaridade</td></tr>
+    <tr><td class="k">Fagerström</td><td>Dependência de nicotina</td></tr>
+    <tr><td class="k">MSI-BPD</td><td>Traços de personalidade <em>borderline</em></td></tr>
+    <tr><td class="k">ASSIST</td><td>Uso de substâncias</td></tr>
+  </table>
+
+  <div class="safe nobreak">
+    <span class="label">Triagem nunca é diagnóstico</span>
+    O Check-up é explícito em cada tela: os resultados <strong>sugerem sintomas compatíveis</strong>
+    com determinada condição e servem como <strong>ponto de partida para uma conversa com um
+    profissional</strong>. Nunca afirma "você tem" tal transtorno. A pontuação é determinística e
+    fiel ao instrumento; a devolutiva por IA segue um roteiro fixo com salvaguardas, e há sempre uma
+    versão segura de reserva.
+  </div>
+
+  <p class="muted">Compromisso ético: conteúdo educativo e honesto, sem sensacionalismo nem promessa
+  de cura, respeitando os limites de publicidade médica do CFM. A triagem é totalmente isolada do
+  prontuário clínico — as respostas do Check-up jamais se misturam aos dados dos seus pacientes.</p>
+
+  <footer class="pg"><span>10 · Check-up Mental</span><span>11</span></footer>
+</section>
+
+<!-- ===================== 11 ===================== -->
+<section id="s11">
+  <div class="eyebrow">Capítulo 11</div>
+  <h2>Como começar</h2>
+  <ol>
+    <li><strong>Cadastro do psiquiatra.</strong> Sua conta é criada com validação do registro
+      profissional (CRM).</li>
+    <li><strong>Configure seu perfil e suas preferências.</strong> Defina como você quer que os
+      lembretes e check-ins funcionem.</li>
+    <li><strong>Convide seus pacientes.</strong> Cada paciente recebe um acesso ao aplicativo
+      vinculado a você, com consentimento registrado.</li>
+    <li><strong>Ajuste as automações por paciente.</strong> Comece simples — humor e adesão — e amplie
+      conforme fizer sentido para cada caso.</li>
+    <li><strong>Use o painel no dia a dia.</strong> A fila de atenção e os resumos pré-consulta
+      organizam sua rotina.</li>
+  </ol>
+
+  <div class="panel nobreak">
+    <div class="eyebrow">Dica de adoção</div>
+    <p style="margin:0">Não é preciso ligar tudo de uma vez. Os recursos mais valiosos no começo
+    costumam ser o <strong>resumo pré-consulta</strong> e o <strong>acompanhamento de adesão e
+    humor</strong>. Teleconsulta, escriba, prescrição e cuidado por medida entram quando você quiser.</p>
+  </div>
+
+  <footer class="pg"><span>11 · Como começar</span><span>12</span></footer>
+</section>
+
+<!-- ===================== 12 ===================== -->
+<section id="s12">
+  <div class="eyebrow">Capítulo 12</div>
+  <h2>Perguntas frequentes</h2>
+
+  <h4>A IA vai opinar sobre o meu caso ou sugerir condutas?</h4>
+  <p>Não. Ela organiza informação, rascunha textos administrativos e sinaliza o que merece atenção.
+  Não diagnostica, não prescreve e não ajusta dose. A conduta é sempre sua.</p>
+
+  <h4>E se o paciente estiver em crise?</h4>
+  <p>O sistema entrega na hora um acolhimento com texto fixo e canais de ajuda, notifica você com
+  entrega garantida e pausa as automações daquele paciente até a sua intervenção. Ver capítulo 03.</p>
+
+  <h4>Posso mudar as mensagens automáticas?</h4>
+  <p>Sim, há um editor de mensagens. As únicas travadas são as de segurança clínica (crise e
+  auditoria), que protegem você e o paciente.</p>
+
+  <h4>Outro médico pode ver meus pacientes?</h4>
+  <p>Não. O isolamento entre psiquiatras é estrutural, reforçado em camadas e testado a cada
+  atualização do sistema.</p>
+
+  <h4>Os dados ficam no exterior?</h4>
+  <p>Não. A infraestrutura roda em região brasileira, com minimização de dados e trilhas de auditoria
+  imutáveis.</p>
+
+  <h4>O Check-up Mental compartilha dados com o prontuário?</h4>
+  <p>Não. A triagem pública é anônima e totalmente isolada. O elo com você é apenas o relatório que o
+  próprio interessado decide levar — e o QR que leva ao cadastro de médicos.</p>
+
+  <h4>O escriba substitui a minha evolução?</h4>
+  <p>Não. Ele produz um rascunho para a sua revisão e edição. O registro definitivo é sempre seu.</p>
+
+  <div class="cover" style="margin-top:24px; padding:30px 34px;">
+    <div class="brand">Cérebro Amigo · by Arinelli</div>
+    <h1 style="font-size:22pt; margin:10px 0 4px 0;">Você cuida. Nós cuidamos do intervalo.</h1>
+    <div class="sub" style="font-size:11pt; max-width:88%;">O Cérebro Amigo existe para devolver o seu
+    tempo ao que só você pode fazer: a decisão clínica. Todo o resto — organizar, lembrar, sinalizar —
+    pode ser nosso.</div>
+    <div class="footnote">Dúvidas e cadastro: www.cerebroamigo.com.br · © 2026 Cérebro Amigo by Arinelli</div>
+  </div>
+
+  <footer class="pg"><span>12 · Perguntas frequentes</span><span>13</span></footer>
+</section>
+
+</body>
+</html>

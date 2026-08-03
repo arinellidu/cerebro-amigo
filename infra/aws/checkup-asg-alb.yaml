@@ -1,0 +1,296 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  Check-up Mental (apps/checkup) desacoplado do box clinico — ALB + Auto Scaling Group
+  de unidades t3.small, escala horizontal por CPU. Superficie publica anonima isolada:
+  IAM minima (sem Bedrock, sem perms clinicas), instancias so acessiveis via ALB.
+  Ver ADR-045 e docs/runbooks/checkup-decouple-cutover.md. NAO inclui o ingress 5432
+  no SG do RDS (mudanca de perimetro clinico — passo explicito no runbook).
+
+Parameters:
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Default: vpc-0edf8eb7d2e60b397
+  SubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+    Default: "subnet-080b40f72f1971227,subnet-0c781b1f0ea120f58,subnet-026f35019da57ea52"
+    Description: 3 subnets publicas (sa-east-1a/1b/1c). ALB exige >=2 AZs.
+  AcmCertificateArn:
+    Type: String
+    Description: ARN do cert ACM de checkup.cerebroamigo.com.br (validado por DNS ANTES — Fase 1 do runbook).
+  CheckupImageTag:
+    Type: String
+    Default: latest
+    Description: Tag da imagem no ECR cerebro-amigo/checkup (use o SHA do deploy em prod).
+  InstanceType:
+    Type: String
+    Default: t3.small
+  MinSize:
+    Type: Number
+    Default: 2
+    Description: >-
+      Piso do ASG. 2 = zero-gap de disponibilidade (instancias em AZs diferentes;
+      falha de 1 instancia/AZ nao derruba o funil de aquisicao). 1 = mais barato,
+      mas ha um gap de ~minutos enquanto o ASG recria. DesiredCapacity segue o MinSize.
+  MaxSize:
+    Type: Number
+    Default: 6
+  TargetCpuPercent:
+    Type: Number
+    Default: 60
+    Description: Target tracking — ASG mira esta media de CPU%.
+  LatestAmiId:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64
+  CfOriginSecret:
+    Type: String
+    NoEcho: true
+    Default: ""
+    Description: >-
+      Valor de X-CF-Origin-Secret (ADR-047). Buscar do SSM antes do deploy:
+      aws ssm get-parameter --region sa-east-1 --name /cerebro-amigo/checkup/cf-origin-secret --with-decryption --query Parameter.Value --output text
+      Vazio = sem CloudFront na frente (a rule do header nao e criada; comportamento atual).
+
+Conditions:
+  # So cria a listener rule do header quando o secret e informado (provisioning do CloudFront).
+  HasCfOriginSecret: !Not [ !Equals [ !Ref CfOriginSecret, "" ] ]
+
+Resources:
+
+  # ── SG do ALB: 80/443 do mundo ────────────────────────────────────────────
+  AlbSg:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: checkup ALB - entrada publica 80/443
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - { IpProtocol: tcp, FromPort: 80,  ToPort: 80,  CidrIp: 0.0.0.0/0, Description: HTTP (redirect 443) }
+        - { IpProtocol: tcp, FromPort: 443, ToPort: 443, CidrIp: 0.0.0.0/0, Description: HTTPS }
+      Tags: [ { Key: Name, Value: cerebro-checkup-alb-sg } ]
+
+  # ── SG das instancias: SO recebe do ALB na 3001 (sem inbound publico, sem SSH) ──
+  InstanceSg:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: checkup instancias - so do ALB na 3001; gestao via SSM
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 3001
+          ToPort: 3001
+          SourceSecurityGroupId: !Ref AlbSg
+          Description: app port, so do ALB
+      Tags: [ { Key: Name, Value: cerebro-checkup-instance-sg } ]
+
+  # ── IAM minima: SSM + ECR pull checkup + logs + SES + params do checkup ──────
+  InstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: EC2-Checkup
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: ec2.amazonaws.com }
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+      Policies:
+        - PolicyName: CheckupEcrPull
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: ecr:GetAuthorizationToken
+                Resource: "*"
+              - Effect: Allow
+                Action: [ ecr:BatchGetImage, ecr:GetDownloadUrlForLayer, ecr:BatchCheckLayerAvailability ]
+                Resource: !Sub arn:aws:ecr:${AWS::Region}:${AWS::AccountId}:repository/cerebro-amigo/checkup
+        - PolicyName: CheckupLogs
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: [ logs:CreateLogStream, logs:PutLogEvents, logs:CreateLogGroup, logs:DescribeLogStreams ]
+                Resource: !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/cerebro-amigo/checkup:*
+        - PolicyName: CheckupSes
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: [ ses:SendEmail, ses:SendRawEmail ]
+                Resource: "*"
+                Condition:
+                  StringEquals:
+                    ses:FromAddress: noreply@cerebroamigo.com.br
+        - PolicyName: CheckupSsmParams
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: ssm:GetParameter
+                Resource: !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/cerebro-amigo/checkup/*
+              - Effect: Allow
+                Action: kms:Decrypt
+                Resource: !Sub arn:aws:kms:${AWS::Region}:${AWS::AccountId}:key/alias/aws/ssm
+      Tags: [ { Key: Name, Value: EC2-Checkup } ]
+
+  InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles: [ !Ref InstanceRole ]
+
+  # ── Target group + ALB + listeners ──────────────────────────────────────────
+  TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      VpcId: !Ref VpcId
+      Port: 3001
+      Protocol: HTTP
+      TargetType: instance
+      HealthCheckPath: /api/health
+      HealthCheckIntervalSeconds: 15
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 3
+      Matcher: { HttpCode: "200-399" }
+      TargetGroupAttributes:
+        - { Key: deregistration_delay.timeout_seconds, Value: "20" }
+
+  Alb:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: cerebro-checkup-alb
+      Type: application
+      Scheme: internet-facing
+      Subnets: !Ref SubnetIds
+      SecurityGroups: [ !Ref AlbSg ]
+
+  HttpsListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref Alb
+      Port: 443
+      Protocol: HTTPS
+      SslPolicy: ELBSecurityPolicy-TLS13-1-2-2021-06
+      Certificates: [ { CertificateArn: !Ref AcmCertificateArn } ]
+      DefaultActions:
+        - { Type: forward, TargetGroupArn: !Ref TargetGroup }
+
+  HttpRedirect:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref Alb
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - Type: redirect
+          RedirectConfig: { Protocol: HTTPS, Port: "443", StatusCode: HTTP_301 }
+
+  # ── Listener rule p/ o CloudFront (ADR-047) ─────────────────────────────────
+  # O CloudFront fala com o ALB em HTTP:80 (OriginProtocolPolicy http-only) e envia
+  # o header X-CF-Origin-Secret (OriginCustomHeaders do cloudfront-checkup.yaml).
+  # Esta rule (priority 1) faz forward p/ o target group quando o header confere;
+  # sem o header, o default do :80 segue redirecionando p/ 443 — bloqueia acesso
+  # direto ao ALB bypassando o CloudFront. Secret = mesmo valor do SSM
+  # /cerebro-amigo/checkup/cf-origin-secret e do OriginSecret no stack do CF.
+  # So existe quando CfOriginSecret e informado (provisioning do CloudFront).
+  # NOTA: o listener :443 segue aberto (forward direto) p/ nao quebrar o acesso
+  # durante o cutover; endurecer o :443 com o mesmo header e passo pos-cutover.
+  CfOriginHeaderRule:
+    Type: AWS::ElasticLoadBalancingV2::ListenerRule
+    Condition: HasCfOriginSecret
+    Properties:
+      ListenerArn: !Ref HttpRedirect
+      Priority: 1
+      Conditions:
+        - Field: http-header
+          HttpHeaderConfig:
+            HttpHeaderName: X-CF-Origin-Secret
+            Values: [ !Ref CfOriginSecret ]
+      Actions:
+        - Type: forward
+          TargetGroupArn: !Ref TargetGroup
+
+  # ── Launch template: AL2023 + docker, puxa imagem + segredos do SSM no boot ──
+  LaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateName: cerebro-checkup-lt
+      LaunchTemplateData:
+        ImageId: !Ref LatestAmiId
+        InstanceType: !Ref InstanceType
+        IamInstanceProfile: { Arn: !GetAtt InstanceProfile.Arn }
+        SecurityGroupIds: [ !Ref InstanceSg ]
+        MetadataOptions: { HttpTokens: required }   # IMDSv2 obrigatorio
+        TagSpecifications:
+          - ResourceType: instance
+            Tags: [ { Key: Name, Value: cerebro-checkup } ]
+        UserData:
+          Fn::Base64: !Sub |
+            #!/bin/bash
+            set -euo pipefail
+            dnf install -y docker
+            systemctl enable --now docker
+            REGION=${AWS::Region}
+            ECR=${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com
+            get() { aws ssm get-parameter --region $REGION --name "$1" --with-decryption --query Parameter.Value --output text; }
+            TAG=$(aws ssm get-parameter --region $REGION --name /cerebro-amigo/checkup/image-tag --query Parameter.Value --output text 2>/dev/null || echo "${CheckupImageTag}")
+            ANTHROPIC=$(get /cerebro-amigo/checkup/anthropic-api-key)
+            DBURL=$(get /cerebro-amigo/checkup/database-url)
+            # Cockpit de Aquisição (ADR-046/ADR-050): Bearer que o BFF clínico usa p/
+            # ler /api/funnel-metrics. Fail-soft (param pode não existir) — a rota é
+            # fail-closed (503) se vazia, então o cockpit só degrada p/ "lado clínico".
+            METRICS=$(get /cerebro-amigo/checkup/metrics-token 2>/dev/null || echo "")
+            RESEND=$(get /cerebro-amigo/checkup/resend-api-key 2>/dev/null || echo "")
+            aws ecr get-login-password --region $REGION | docker login --username AWS --password-stdin $ECR
+            docker rm -f checkup 2>/dev/null || true
+            docker run -d --name checkup --restart unless-stopped \
+              -p 3001:3001 --memory 1g \
+              --log-driver=awslogs \
+              --log-opt awslogs-region=$REGION \
+              --log-opt awslogs-group=/cerebro-amigo/checkup \
+              --log-opt awslogs-stream=checkup-$(hostname) \
+              -e NODE_ENV=production -e PORT=3001 \
+              -e ANTHROPIC_API_KEY="$ANTHROPIC" \
+              -e CHECKUP_DATABASE_URL="$DBURL" \
+              -e CHECKUP_METRICS_TOKEN="$METRICS" \
+              -e RESEND_API_KEY="$RESEND" \
+              -e NEXT_PUBLIC_SITE_URL=https://checkup.cerebroamigo.com.br \
+              $ECR/cerebro-amigo/checkup:$TAG
+
+  # ── ASG + target tracking de CPU ────────────────────────────────────────────
+  Asg:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      AutoScalingGroupName: cerebro-checkup-asg
+      VPCZoneIdentifier: !Ref SubnetIds
+      LaunchTemplate:
+        LaunchTemplateId: !Ref LaunchTemplate
+        Version: !GetAtt LaunchTemplate.LatestVersionNumber
+      MinSize: !Ref MinSize
+      MaxSize: !Ref MaxSize
+      DesiredCapacity: !Ref MinSize
+      TargetGroupARNs: [ !Ref TargetGroup ]
+      HealthCheckType: ELB
+      HealthCheckGracePeriod: 90
+      Tags:
+        - { Key: Name, Value: cerebro-checkup, PropagateAtLaunch: true }
+
+  CpuTracking:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties:
+      AutoScalingGroupName: !Ref Asg
+      PolicyType: TargetTrackingScaling
+      TargetTrackingConfiguration:
+        PredefinedMetricSpecification: { PredefinedMetricType: ASGAverageCPUUtilization }
+        TargetValue: !Ref TargetCpuPercent
+
+Outputs:
+  AlbDnsName:
+    Description: Apontar checkup.cerebroamigo.com.br (CNAME) p/ este nome na Vercel DNS.
+    Value: !GetAtt Alb.DNSName
+  InstanceSgId:
+    Description: Adicionar este SG no ingress 5432 do RDS (sg-01b07c7f4a5e0b2c5) — passo do runbook.
+    Value: !Ref InstanceSg
+  AsgName:
+    Value: !Ref Asg

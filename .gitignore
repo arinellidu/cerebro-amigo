@@ -1,0 +1,55 @@
+# v0 sandbox internal files
+__v0_runtime_loader.js
+__v0_devtools.tsx
+__v0_jsx-dev-runtime.ts
+.snowflake/
+.v0-trash/
+.vercel/
+.azure-cerebro/
+
+# Environment variables
+.env
+.env.*
+.env*.local
+!.env.example
+
+# Common ignores
+node_modules/
+.pnpm-store/
+.next/
+.DS_Store
+
+# TypeScript build info
+*.tsbuildinfo
+
+# .NET
+apps/api-gateway/bin/
+apps/api-gateway/obj/
+apps/api-gateway-tests/bin/
+apps/api-gateway-tests/obj/
+
+# Python
+**/__pycache__/
+**/*.pyc
+**/.venv/
+**/.pytest_cache/
+**/*.egg-info/
+**/htmlcov/
+**/.coverage
+
+# V3 — segurança e auxiliares
+_v2-ref/
+*.zip
+
+# Docker compose local override (creds AWS injetadas — nunca commitar)
+docker-compose.override.yml
+
+# Sentry
+.sentryclirc
+.sentry/
+.env.sentry-build-plugin
+.vercel
+
+# Local design previews and generated review artifacts
+.tmp/
+.impeccable/live/

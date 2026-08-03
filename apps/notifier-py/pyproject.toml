@@ -1,0 +1,43 @@
+[project]
+name = "cerebro-amigo-notifier"
+version = "0.1.0"
+description = "Cérebro Amigo · notifier (VAPID push + scheduling de check-ins)"
+requires-python = ">=3.12"
+
+dependencies = [
+    "fastapi>=0.118.0",
+    "uvicorn[standard]>=0.32.0",
+    "sentry-sdk[fastapi]>=2.0.0",
+    "apscheduler>=3.10.0",
+    "asyncpg>=0.30.0",
+    "pywebpush>=2.0.0",
+    "pydantic>=2.10.0",
+    "pydantic-settings>=2.7.0",
+    "structlog>=24.4.0",
+
+    # Cifragem em repouso (ADR-018)
+    "cryptography>=44.0.0",
+
+    # E-mail provider SES atrás da flag EMAIL_PROVIDER=ses (ADR-072). Inativo
+    # enquanto vigente=resend; presente p/ o caminho funcionar quando flipado.
+    "boto3>=1.35.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3.0",
+    "pytest-asyncio>=0.24.0",
+    "ruff>=0.8.0",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "N", "RUF", "ASYNC"]
+ignore = ["E501"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]

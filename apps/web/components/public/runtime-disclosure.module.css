@@ -1,0 +1,63 @@
+.runtime {
+  display: grid;
+  grid-template-columns: minmax(210px, .62fr) minmax(420px, 1.35fr) minmax(260px, .8fr);
+  width: min(calc(100% - 3rem), 1180px);
+  margin: 0 auto;
+  border-block: 1px solid rgba(106, 154, 187, .24);
+  color: var(--trace);
+  background: rgba(4, 11, 17, .54);
+}
+
+.runtime > * { min-width: 0; }
+
+.runtime header,
+.boundary { padding: 1.5rem; }
+
+.runtime header p,
+.runtime dt {
+  margin: 0;
+  color: var(--cyan-soft);
+  font: 500 .58rem/1.4 var(--font-mono-jb), monospace;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+}
+
+.runtime h2 {
+  max-width: 12ch;
+  margin: .65rem 0 0;
+  font-family: var(--font-barlow-condensed), sans-serif;
+  font-size: clamp(1.7rem, 2.7vw, 2.6rem);
+  font-weight: 500;
+  line-height: .92;
+  letter-spacing: -.015em;
+  text-transform: uppercase;
+}
+
+.runtime dl {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 0;
+  border-inline: 1px solid rgba(106, 154, 187, .2);
+}
+
+.runtime dl div { padding: .9rem 1rem; }
+.runtime dl div:nth-child(odd) { border-right: 1px solid rgba(106, 154, 187, .18); }
+.runtime dl div:nth-child(-n + 2) { border-bottom: 1px solid rgba(106, 154, 187, .18); }
+.runtime dd { margin: .35rem 0 0; color: var(--trace); font-size: .77rem; line-height: 1.35; }
+.boundary { align-self: stretch; box-shadow: inset 3px 0 0 var(--yellow); }
+.boundary strong { color: var(--yellow); font: 600 .65rem/1.2 var(--font-mono-jb), monospace; text-transform: uppercase; }
+.boundary p { margin: .55rem 0 0; color: var(--telemetry); font-size: .72rem; line-height: 1.55; }
+
+@media (max-width: 900px) {
+  .runtime { grid-template-columns: 1fr; }
+  .runtime h2 { max-width: none; }
+  .runtime dl { border: 0; border-block: 1px solid rgba(106, 154, 187, .2); }
+  .boundary { box-shadow: inset 3px 0 0 var(--yellow); }
+}
+
+@media (max-width: 600px) {
+  .runtime { width: calc(100% - 2rem); }
+  .runtime dl { grid-template-columns: 1fr; }
+  .runtime dl div:nth-child(n) { border-right: 0; border-bottom: 1px solid rgba(106, 154, 187, .18); }
+  .runtime dl div:last-child { border-bottom: 0; }
+}

@@ -1,0 +1,71 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  Auto-recovery do EC2 do box clinico (plano de seguranca P0-2). Mitiga o SPOF de
+  compute (ADR-043 item B ainda adiado): dois alarmes de status-check ->
+  System falhou = ec2:recover (migra p/ hardware novo), Instance falhou =
+  ec2:reboot (OS-level). Reduz downtime de ~10min (recuperacao manual) p/ ~2min.
+  Notifica via SNS em disparo e recuperacao.
+
+Parameters:
+  InstanceId:
+    Type: String
+    Description: ID da instancia EC2 do box clinico.
+    Default: i-057860cd97edafefb
+  SnsTopicArn:
+    Type: String
+    Description: Topico SNS para notificar (reusa o canal de ops/RDS).
+    Default: arn:aws:sns:sa-east-1:004177894935:cerebro-amigo-rds-backup-alertas
+
+Resources:
+  SystemCheckRecover:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: cerebro-ec2-system-check-recover
+      AlarmDescription: >-
+        EC2 System status check falhou (problema de hardware/host AWS) ->
+        ec2:recover migra a instancia p/ hardware novo (mesmo IP/EBS). + notifica.
+      Namespace: AWS/EC2
+      MetricName: StatusCheckFailed_System
+      Dimensions:
+        - Name: InstanceId
+          Value: !Ref InstanceId
+      Statistic: Maximum
+      Period: 60
+      EvaluationPeriods: 2
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: missing
+      AlarmActions:
+        - !Sub arn:aws:automate:${AWS::Region}:ec2:recover
+        - !Ref SnsTopicArn
+      OKActions:
+        - !Ref SnsTopicArn
+
+  InstanceCheckReboot:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: cerebro-ec2-instance-check-reboot
+      AlarmDescription: >-
+        EC2 Instance status check falhou (OS/rede da instancia) -> ec2:reboot. + notifica.
+      Namespace: AWS/EC2
+      MetricName: StatusCheckFailed_Instance
+      Dimensions:
+        - Name: InstanceId
+          Value: !Ref InstanceId
+      Statistic: Maximum
+      Period: 60
+      EvaluationPeriods: 3
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: missing
+      AlarmActions:
+        - !Sub arn:aws:automate:${AWS::Region}:ec2:reboot
+        - !Ref SnsTopicArn
+      OKActions:
+        - !Ref SnsTopicArn
+
+Outputs:
+  SystemAlarm:
+    Value: !Ref SystemCheckRecover
+  InstanceAlarm:
+    Value: !Ref InstanceCheckReboot

@@ -1,0 +1,11 @@
+# Diário 03:30 America/Sao_Paulo (Persistent pega janela perdida em reboot).
+[Unit]
+Description=Timer diario do backup Postgres -> S3 (ADR-077)
+
+[Timer]
+OnCalendar=*-*-* 03:30:00 America/Sao_Paulo
+Persistent=true
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,239 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  CloudFront para www.cerebroamigo.com.br (apps/web) na frente do ALB cerebro-web.
+  Default = PASS-THROUGH SEM CACHE (auth/BFF/SSE/Server Actions); so estaticos
+  cacheados. NAO deployar sem ler os GATES + RISCO DE SSE (comentarios abaixo) e o
+  runbook docs/runbooks/cloudfront-web.md.
+
+# ⚠️ DIFERENTE do checkup (ADR-047): web tem AUTH (cookies httpOnly), BFF /api/*, SSE
+# (conversa paciente<->IA, sinalizacao de teleconsulta) e Server Actions (POST nas
+# rotas). Por isso o DEFAULT e pass-through sem cache; so /_next/static, /_next/image
+# e estaticos sao cacheados no edge.
+#
+# ── GATES (todos dependem do Patrick / DNS) ────────────────────────────────────
+# 1. CERT us-east-1: CloudFront SO aceita ACM em us-east-1 (o do ALB e sa-east-1, nao
+#    serve). Criar/validar NOVO cert us-east-1 cobrindo www. Validacao = CNAME na zona
+#    (Vercel, do Patrick).
+# 2. ORIGIN SECRET: setar CfOriginSecret no stack cerebro-web (web-asg-alb.yaml ja tem
+#    o param + a CfOriginHeaderRule porta 80) via `cloudformation deploy` MANUAL, e
+#    passar o MESMO valor aqui. Guardar em SSM /cerebro-amigo/web/cf-origin-secret.
+# 3. DNS: apontar www CNAME -> dominio desta distribuicao (hoje www -> ALB direto).
+#    Zona e do Patrick (Vercel). Apex segue impossivel via Vercel (sem ALIAS p/ CF).
+#
+# ── RISCO DE SSE (validar ANTES do cutover) ────────────────────────────────────
+# ALB tem idle_timeout=300s (conversa pode ficar >60s sem byte com o LLM "pensando").
+# CF limita OriginReadTimeout a 60s sem aumento de cota (max 180s via support). SSE
+# alem do timeout = CF derruba -> conversa/teleconsulta quebram. Mitigar: (a) validar
+# conversa+teleconsulta atras do CF antes do DNS; (b) cota OriginReadTimeout=180s; ou
+# (c) SSE por hostname separado direto no ALB (muda client). NAO cutover ate resolver.
+#
+# ── CUSTO ──────────────────────────────────────────────────────────────────────
+# Publico BR, origin ja em sa-east-1. Edge de Sao Paulo (GRU) so existe em
+# PriceClass_All; PriceClass_100 (NA+EU) rotearia BR p/ edge longe = PIOR. Credito AWS
+# secou. Ganho p/ BR-only e MODESTO; compensa com trafego nao-BR ou zona no Route53.
+
+Parameters:
+  AcmCertificateArn:
+    Type: String
+    Description: >
+      ARN do cert ACM em us-east-1 (NAO o de sa-east-1 do ALB) cobrindo
+      www.cerebroamigo.com.br, ja validado. Gate 1.
+
+  OriginDomain:
+    Type: String
+    Default: "cerebro-web-alb-605225345.sa-east-1.elb.amazonaws.com"
+    Description: DNS do ALB do web (stack cerebro-web). Origin da distribuicao.
+
+  OriginProtocol:
+    Type: String
+    Default: "http-only"
+    AllowedValues: ["https-only", "http-only", "match-viewer"]
+    Description: >
+      http-only: CF -> ALB:80. A CfOriginHeaderRule (priority 1, porta 80) do
+      web-asg-alb.yaml faz forward quando X-CF-Origin-Secret bate; sem header =
+      redirect 301 p/ HTTPS (protege o origin de acesso direto).
+
+  OriginSecret:
+    Type: String
+    NoEcho: true
+    Description: >
+      Valor de X-CF-Origin-Secret. MESMO valor passado como CfOriginSecret no stack
+      cerebro-web (Gate 2). Buscar de SSM:
+      aws ssm get-parameter --region sa-east-1 --name /cerebro-amigo/web/cf-origin-secret --with-decryption --query Parameter.Value --output text
+
+  PriceClass:
+    Type: String
+    Default: PriceClass_All
+    AllowedValues:
+      - PriceClass_100   # NA + Europa. NAO inclui Sao Paulo -> pior p/ BR.
+      - PriceClass_200   # + Asia/Africa/Oriente Medio. Ainda sem South America.
+      - PriceClass_All   # + South America (edge GRU/Sao Paulo). Correto p/ BR.
+    Description: PriceClass_All p/ ter o edge de Sao Paulo (unico que cobre BR).
+
+Resources:
+
+  # ── Cache policies p/ conteudo CACHEAVEL (estatico) ───────────────────────────
+
+  StaticAssetsCachePolicy:
+    Type: AWS::CloudFront::CachePolicy
+    Properties:
+      CachePolicyConfig:
+        Name: !Sub "${AWS::StackName}-static"
+        Comment: "Next /_next/static/* e estaticos versionados — imutavel 1 ano"
+        DefaultTTL: 31536000
+        MaxTTL: 31536000
+        MinTTL: 31536000
+        ParametersInCacheKeyAndForwardedToOrigin:
+          EnableAcceptEncodingGzip: true
+          EnableAcceptEncodingBrotli: true
+          CookiesConfig: { CookieBehavior: none }
+          HeadersConfig: { HeaderBehavior: none }
+          QueryStringsConfig: { QueryStringBehavior: none }
+
+  ImageCachePolicy:
+    Type: AWS::CloudFront::CachePolicy
+    Properties:
+      CachePolicyConfig:
+        Name: !Sub "${AWS::StackName}-image"
+        Comment: "Next /_next/image — cache por (url,w,q) + Accept (webp/avif). Sem cookies."
+        DefaultTTL: 86400
+        MaxTTL: 31536000
+        MinTTL: 0
+        ParametersInCacheKeyAndForwardedToOrigin:
+          EnableAcceptEncodingGzip: true
+          EnableAcceptEncodingBrotli: true
+          CookiesConfig: { CookieBehavior: none }
+          HeadersConfig:
+            HeaderBehavior: whitelist
+            Headers: [ "Accept" ]   # negociacao webp/avif vira chave de cache distinta
+          QueryStringsConfig:
+            QueryStringBehavior: whitelist
+            QueryStrings: [ "url", "w", "q" ]
+
+  # ── Origin request policy p/ rotas DINAMICAS (pass-through total) ──────────────
+  # Encaminha cookies + todos os headers do viewer + query: necessario p/ auth
+  # (auth_token/paciente_token), BFF, SSE e Server Actions.
+  DynamicOriginRequestPolicy:
+    Type: AWS::CloudFront::OriginRequestPolicy
+    Properties:
+      OriginRequestPolicyConfig:
+        Name: !Sub "${AWS::StackName}-dynamic-origin"
+        Comment: "Pass-through: cookies + allViewer + query (auth/BFF/SSE/Server Actions)"
+        CookiesConfig: { CookieBehavior: all }
+        HeadersConfig: { HeaderBehavior: allViewer }
+        QueryStringsConfig: { QueryStringBehavior: all }
+
+  WebDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        Comment: "www.cerebroamigo.com.br CDN (web/EC2). Default = pass-through."
+        Aliases:
+          - www.cerebroamigo.com.br
+        ViewerCertificate:
+          AcmCertificateArn: !Ref AcmCertificateArn
+          SslSupportMethod: sni-only
+          MinimumProtocolVersion: TLSv1.2_2021
+        HttpVersion: http2and3
+        PriceClass: !Ref PriceClass
+        IPV6Enabled: true
+
+        Origins:
+          - Id: WebAlb
+            DomainName: !Ref OriginDomain
+            CustomOriginConfig:
+              HTTPSPort: 443
+              HTTPPort: 80
+              OriginProtocolPolicy: !Ref OriginProtocol
+              # 60s = teto sem aumento de cota. Ver RISCO DE SSE no topo.
+              OriginReadTimeout: 60
+              OriginKeepaliveTimeout: 5
+            OriginCustomHeaders:
+              - HeaderName: X-CF-Origin-Secret
+                HeaderValue: !Ref OriginSecret
+
+        # Ordem: mais especifico primeiro.
+        CacheBehaviors:
+          # Assets imutaveis do Next (hash no nome) — cache agressivo.
+          - PathPattern: "/_next/static/*"
+            TargetOriginId: WebAlb
+            ViewerProtocolPolicy: redirect-to-https
+            CachePolicyId: !GetAtt StaticAssetsCachePolicy.Id
+            Compress: true
+
+          # Imagens otimizadas pelo Next — cache por (url,w,q)+Accept.
+          - PathPattern: "/_next/image*"
+            TargetOriginId: WebAlb
+            ViewerProtocolPolicy: redirect-to-https
+            CachePolicyId: !GetAtt ImageCachePolicy.Id
+            Compress: true
+
+          # Service worker: NUNCA cachear longo (precisa propagar update na hora).
+          - PathPattern: "/sw.js"
+            TargetOriginId: WebAlb
+            ViewerProtocolPolicy: redirect-to-https
+            CachePolicyId: "4135ea2d-6df8-44a3-9df3-4b5a84be39ad"   # CachingDisabled
+            Compress: true
+
+          # Estaticos do /public (icones, og, logo, manifest). Sem cookies.
+          - PathPattern: "*.png"
+            TargetOriginId: WebAlb
+            ViewerProtocolPolicy: redirect-to-https
+            CachePolicyId: !GetAtt StaticAssetsCachePolicy.Id
+            Compress: true
+          - PathPattern: "*.ico"
+            TargetOriginId: WebAlb
+            ViewerProtocolPolicy: redirect-to-https
+            CachePolicyId: !GetAtt StaticAssetsCachePolicy.Id
+            Compress: true
+          - PathPattern: "*.svg"
+            TargetOriginId: WebAlb
+            ViewerProtocolPolicy: redirect-to-https
+            CachePolicyId: !GetAtt StaticAssetsCachePolicy.Id
+            Compress: true
+          - PathPattern: "*.webmanifest"
+            TargetOriginId: WebAlb
+            ViewerProtocolPolicy: redirect-to-https
+            CachePolicyId: !GetAtt StaticAssetsCachePolicy.Id
+            Compress: true
+
+          # BFF /api/* — POST/SSE/auth. PASS-THROUGH, sem cache, todos os metodos.
+          # ⚠️ SSE (conversa, sinal de teleconsulta) vive aqui — ver RISCO DE SSE.
+          - PathPattern: "/api/*"
+            TargetOriginId: WebAlb
+            ViewerProtocolPolicy: redirect-to-https
+            AllowedMethods: [ GET, HEAD, OPTIONS, PUT, POST, PATCH, DELETE ]
+            CachedMethods: [ GET, HEAD ]
+            CachePolicyId: "4135ea2d-6df8-44a3-9df3-4b5a84be39ad"   # CachingDisabled
+            OriginRequestPolicyId: !GetAtt DynamicOriginRequestPolicy.Id
+            Compress: false
+
+        # DEFAULT = pass-through SEM cache: dashboard, portal /p/*, login, landings
+        # com Server Actions (POST). NAO e cacheado porque a maioria e auth/dinamico;
+        # as landings publicas ja vem com Cache-Control da origin (browser cacheia),
+        # e os assets pesados (/_next/static, imagens) tem behaviors proprios acima.
+        DefaultCacheBehavior:
+          TargetOriginId: WebAlb
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods: [ GET, HEAD, OPTIONS, PUT, POST, PATCH, DELETE ]
+          CachedMethods: [ GET, HEAD ]
+          CachePolicyId: "4135ea2d-6df8-44a3-9df3-4b5a84be39ad"     # CachingDisabled
+          OriginRequestPolicyId: !GetAtt DynamicOriginRequestPolicy.Id
+          Compress: true
+
+        # Sem CustomErrorResponses: origin e SSR (Next), dona dos status/erros.
+
+      Tags:
+        - { Key: Project, Value: cerebro-amigo }
+        - { Key: App, Value: web }
+
+Outputs:
+  DistributionId:
+    Description: CloudFront Distribution ID (usar p/ invalidacoes no deploy do web)
+    Value: !Ref WebDistribution
+    Export: { Name: !Sub "${AWS::StackName}-distribution-id" }
+  DistributionDomain:
+    Description: Dominio CF — apontar www.cerebroamigo.com.br CNAME aqui (Gate 3, Patrick)
+    Value: !GetAtt WebDistribution.DomainName
+    Export: { Name: !Sub "${AWS::StackName}-domain" }

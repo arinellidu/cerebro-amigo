@@ -1,0 +1,46 @@
+{
+  "name": "@cerebro-amigo/checkup",
+  "private": true,
+  "packageManager": "pnpm@10.33.3",
+  "scripts": {
+    "dev": "next dev -p 3001",
+    "build": "next build",
+    "start": "next start -p 3001",
+    "test": "vitest run",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "next": "^16",
+    "react": "^19",
+    "react-dom": "^19",
+    "@anthropic-ai/sdk": "latest",
+    "@aws-sdk/client-sesv2": "^3",
+    "@react-pdf/renderer": "^4",
+    "bcryptjs": "^2.4.3",
+    "drizzle-orm": "^0.45.2",
+    "postgres": "^3",
+    "zod": "^4",
+    "lucide-react": "latest",
+    "qrcode": "^1",
+    "clsx": "^2",
+    "tailwind-merge": "^2"
+  },
+  "browserslist": [
+    "chrome >= 100",
+    "edge >= 100",
+    "firefox >= 100",
+    "safari >= 15.4"
+  ],
+  "devDependencies": {
+    "typescript": "^5",
+    "vitest": "^3",
+    "tailwindcss": "^4",
+    "@tailwindcss/postcss": "^4",
+    "drizzle-kit": "^0.31",
+    "@types/node": "^22",
+    "@types/react": "^19",
+    "@types/qrcode": "^1",
+    "@types/bcryptjs": "^2.4.6"
+  },
+  "//": "Versões: alinhar com o lockfile do monorepo (pnpm). shadcn/ui via CLI (estilo new-york), copiando components.json de apps/web."
+}

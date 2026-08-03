@@ -1,0 +1,86 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  Trava de custo do piloto — Cerebro Amigo V3.
+  Budget mensal (alertas 50/80/100% ACTUAL + 100% FORECASTED) por e-mail.
+  Rastreia custo BRUTO de uso (IncludeCredit/Refund=false) para nao ser
+  mascarado por credito que esta acabando. Cost Anomaly Detection ja existe
+  (Default-Services-Monitor); a assinatura extra e' adicionada via CLI
+  (cost-tags.sh / runbook), pois aponta para monitor criado fora deste stack.
+  Budget e' servico global — deploy em us-east-1 (billing-adjacent).
+
+Parameters:
+  MonthlyLimitUsd:
+    Type: Number
+    Default: 120
+    Description: Teto mensal em USD. Alertas em 50/80/100% deste valor.
+  NotifyEmail:
+    Type: String
+    Default: alerts@arinelli.com
+    Description: E-mail que recebe os alertas (Budgets nao exige confirmacao).
+
+Resources:
+  MonthlyBudget:
+    Type: AWS::Budgets::Budget
+    Properties:
+      Budget:
+        BudgetName: cerebro-amigo-mensal
+        BudgetType: COST
+        TimeUnit: MONTHLY
+        BudgetLimit:
+          Amount: !Ref MonthlyLimitUsd
+          Unit: USD
+        # Custo BRUTO: credito/refund NAO abatem o tracking (anti-mascaramento).
+        CostTypes:
+          IncludeCredit: false
+          IncludeRefund: false
+          IncludeTax: true
+          IncludeSubscription: true
+          IncludeUpfront: true
+          IncludeRecurring: true
+          IncludeOtherSubscription: true
+          IncludeSupport: true
+          IncludeDiscount: true
+          UseAmortized: false
+          UseBlended: false
+      NotificationsWithSubscribers:
+        - Notification:
+            NotificationType: ACTUAL
+            ComparisonOperator: GREATER_THAN
+            Threshold: 50
+            ThresholdType: PERCENTAGE
+          Subscribers:
+            - SubscriptionType: EMAIL
+              Address: !Ref NotifyEmail
+        - Notification:
+            NotificationType: ACTUAL
+            ComparisonOperator: GREATER_THAN
+            Threshold: 80
+            ThresholdType: PERCENTAGE
+          Subscribers:
+            - SubscriptionType: EMAIL
+              Address: !Ref NotifyEmail
+        - Notification:
+            NotificationType: ACTUAL
+            ComparisonOperator: GREATER_THAN
+            Threshold: 100
+            ThresholdType: PERCENTAGE
+          Subscribers:
+            - SubscriptionType: EMAIL
+              Address: !Ref NotifyEmail
+        # Aviso precoce: previsao de estourar o teto antes de fechar o mes.
+        - Notification:
+            NotificationType: FORECASTED
+            ComparisonOperator: GREATER_THAN
+            Threshold: 100
+            ThresholdType: PERCENTAGE
+          Subscribers:
+            - SubscriptionType: EMAIL
+              Address: !Ref NotifyEmail
+
+Outputs:
+  BudgetName:
+    Value: cerebro-amigo-mensal
+    Description: Nome do budget (alertas 50/80/100% ACTUAL + 100% FORECASTED).
+  MonthlyLimitUsd:
+    Value: !Ref MonthlyLimitUsd
+    Description: Teto mensal configurado (USD).

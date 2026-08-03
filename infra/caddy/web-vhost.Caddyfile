@@ -1,0 +1,36 @@
+# ── Frontend web (dashboard médico + portal paciente /p/* + BFF) ───────────────
+# Migração Vercel → EC2 sa-east-1 (mata cold start + sai da Vercel).
+# Caddy roda no HOST do box clínico (NÃO está no docker-compose) → proxy para a
+# porta PUBLICADA do container web (3000:3000). Mesmo padrão do bloco api.* que
+# já existe no Caddyfile do box (api.cerebroamigo.com.br → localhost:5050).
+#
+# Como usar: anexar estes blocos ao Caddyfile do box (/etc/caddy/Caddyfile) e
+# `caddy reload`. TLS é automático (Let's Encrypt) — provisiona ANTES de virar o
+# DNS (testar via /etc/hosts apontando www→IP do box). NÃO virar DNS sem TLS no ar.
+
+www.cerebroamigo.com.br {
+	encode zstd gzip
+
+	# Cabeçalhos de segurança (substituem o que a Vercel não dava de qualquer forma;
+	# alinhado ao roadmap de hardening P1 — CSP/HSTS).
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "SAMEORIGIN"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+
+	reverse_proxy localhost:3000 {
+		# flush_interval -1 = desliga buffering → necessário p/ SSE da conversa
+		# médico↔paciente (/dashboard/mensagens, /p/* via proxy do BFF).
+		flush_interval -1
+		# Caddy já injeta X-Forwarded-{For,Proto,Host} + Host original por padrão.
+		# Next standalone confia neles p/ origin de Server Actions (Host = www → ok).
+	}
+}
+
+# apex → www (canônico = www, conforme prod atual). Evita 404 de quem digita sem www.
+cerebroamigo.com.br {
+	redir https://www.cerebroamigo.com.br{uri} permanent
+}

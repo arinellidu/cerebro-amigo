@@ -1,0 +1,83 @@
+{
+  "widgets": [
+    {
+      "type": "metric", "x": 0, "y": 0, "width": 6, "height": 5,
+      "properties": {
+        "title": "Postgres UP", "region": "sa-east-1", "view": "timeSeries", "stat": "Minimum", "period": 60,
+        "metrics": [["Cerebro/Postgres", "PgUp"]],
+        "yAxis": {"left": {"min": 0, "max": 1}},
+        "annotations": {"horizontal": [{"value": 1, "label": "up"}]}
+      }
+    },
+    {
+      "type": "metric", "x": 6, "y": 0, "width": 9, "height": 5,
+      "properties": {
+        "title": "Conexões (total × ativas)", "region": "sa-east-1", "view": "timeSeries", "stat": "Maximum", "period": 60,
+        "metrics": [["Cerebro/Postgres", "ConnectionsTotal"], ["Cerebro/Postgres", "ConnectionsActive"]],
+        "annotations": {"horizontal": [{"value": 100, "label": "max_connections", "color": "#d62728"}]}
+      }
+    },
+    {
+      "type": "metric", "x": 15, "y": 0, "width": 9, "height": 5,
+      "properties": {
+        "title": "Cache hit ratio (%)", "region": "sa-east-1", "view": "timeSeries", "stat": "Minimum", "period": 300,
+        "metrics": [["Cerebro/Postgres", "CacheHitRatio"]],
+        "yAxis": {"left": {"min": 80, "max": 100}}
+      }
+    },
+    {
+      "type": "metric", "x": 0, "y": 5, "width": 8, "height": 5,
+      "properties": {
+        "title": "Tamanho do database (cerebro_v3)", "region": "sa-east-1", "view": "timeSeries", "stat": "Maximum", "period": 300,
+        "metrics": [["Cerebro/Postgres", "DbSizeBytes"]]
+      }
+    },
+    {
+      "type": "metric", "x": 8, "y": 5, "width": 8, "height": 5,
+      "properties": {
+        "title": "Locks aguardando × deadlocks (acum.)", "region": "sa-east-1", "view": "timeSeries", "stat": "Maximum", "period": 60,
+        "metrics": [["Cerebro/Postgres", "LocksWaiting"], ["Cerebro/Postgres", "DeadlocksTotal"]]
+      }
+    },
+    {
+      "type": "metric", "x": 16, "y": 5, "width": 8, "height": 5,
+      "properties": {
+        "title": "Disco /data/postgres (%)", "region": "sa-east-1", "view": "timeSeries", "stat": "Maximum", "period": 60,
+        "metrics": [["Cerebro/Postgres", "DataDiskUsedPercent"]],
+        "yAxis": {"left": {"min": 0, "max": 100}},
+        "annotations": {"horizontal": [{"value": 80, "label": "alerta 80%", "color": "#d62728"}]}
+      }
+    },
+    {
+      "type": "metric", "x": 0, "y": 10, "width": 8, "height": 5,
+      "properties": {
+        "title": "Swap usado (%)", "region": "sa-east-1", "view": "timeSeries", "stat": "Maximum", "period": 60,
+        "metrics": [["Cerebro/Postgres", "SwapUsedPercent"]],
+        "yAxis": {"left": {"min": 0, "max": 100}}
+      }
+    },
+    {
+      "type": "metric", "x": 8, "y": 10, "width": 8, "height": 5,
+      "properties": {
+        "title": "Backup: idade (h) × restore-test (1=PASS)", "region": "sa-east-1", "view": "timeSeries", "stat": "Maximum", "period": 300,
+        "metrics": [["Cerebro/Postgres", "BackupAgeHours"], ["Cerebro/Postgres", "RestoreTestOk"]],
+        "annotations": {"horizontal": [{"value": 26, "label": "stale 26h", "color": "#d62728"}]}
+      }
+    },
+    {
+      "type": "metric", "x": 16, "y": 10, "width": 8, "height": 5,
+      "properties": {
+        "title": "CPUCreditBalance (t3 — burst)", "region": "sa-east-1", "view": "timeSeries", "stat": "Minimum", "period": 300,
+        "metrics": [["AWS/EC2", "CPUCreditBalance", "InstanceId", "i-057860cd97edafefb"]],
+        "annotations": {"horizontal": [{"value": 100, "label": "alerta <100", "color": "#d62728"}]}
+      }
+    },
+    {
+      "type": "metric", "x": 0, "y": 15, "width": 8, "height": 5,
+      "properties": {
+        "title": "OOM kills (kernel)", "region": "sa-east-1", "view": "timeSeries", "stat": "Sum", "period": 300,
+        "metrics": [["Cerebro/Postgres", "OomKills"]]
+      }
+    }
+  ]
+}

@@ -1,0 +1,220 @@
+# Box único do stack CLÍNICO (ADR-079) — relançamento pós-teardown, espelha o
+# padrão do checkup-box (ADR-078): t3.medium coberto pelo Savings Plan 6c71ed92
+# (t3/sa-east-1, ativo até 2027-06-18), build no próprio box (sem ECR/CI),
+# Caddy TLS no lugar de CloudFront/ALB, Postgres self-hosted (ADR-077).
+#
+# O checkup segue no SEU box (isolamento clínico ⇄ público — CLAUDE.md regra #4
+# do checkup): nada dele roda aqui, nada daqui roda lá.
+#
+# Rede: serviços falam pelos nomes na network do compose (postgres, api-gateway…).
+# Nenhuma porta de app publicada no host — só Caddy (80/443) e coturn (profile).
+#
+# Isolamento de recurso (ADR-009/ADR-077): todos têm mem_limit para um vazamento
+# não derrubar o postgres (caminho de crise). Interativo/crise = teto folgado +
+# cpu_shares 1024; batch = teto justo + cpu_shares 256. Calibrado p/ t3.medium
+# (2 vCPU / 3,7 GiB + swap 4G); soma dos tetos excede a RAM de propósito
+# (teto = contenção, não alocação).
+name: clinical
+
+services:
+  postgres:
+    image: pgvector/pgvector:0.8.4-pg16
+    restart: unless-stopped
+    shm_size: 512mb
+    mem_reservation: 512m
+    mem_limit: 1g
+    cpu_shares: 1024
+    environment:
+      POSTGRES_PASSWORD: ${DB_SUPERUSER_PASSWORD:?defina no .env (deploy.sh injeta do SSM)}
+      POSTGRES_DB: cerebro_v3
+    volumes:
+      # Volume EBS dedicado e cifrado, montado pelo user-data/provision em /data.
+      - /data/postgres:/var/lib/postgresql/data
+      # Cert TLS self-signed gerado pelo deploy.sh (fora do PGDATA para não
+      # brigar com o initdb; key 0600 uid 999). DSNs usam sslmode=require /
+      # Trust Server Certificate=true — não validam CA.
+      - /data/pgcerts:/pgcerts:ro
+    command:
+      - postgres
+      - -c
+      - ssl=on
+      - -c
+      - ssl_cert_file=/pgcerts/server.crt
+      - -c
+      - ssl_key_file=/pgcerts/server.key
+      - -c
+      - shared_buffers=256MB
+      - -c
+      - effective_cache_size=1GB
+      - -c
+      - work_mem=16MB
+      - -c
+      - maintenance_work_mem=256MB
+      - -c
+      - max_connections=100
+      - -c
+      - wal_compression=on
+      - -c
+      - log_min_duration_statement=1000
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  api-gateway:
+    image: cerebro-amigo/api-gateway:box
+    build:
+      context: ../../apps/api-gateway
+    restart: unless-stopped
+    mem_reservation: 256m
+    mem_limit: 768m
+    cpu_shares: 1024
+    env_file: .env
+    environment:
+      ORCHESTRATOR_PY_URL: http://orchestrator-py:8081
+      AGENTS_PY_URL: http://agents-py:8082
+      NOTIFIER_PY_URL: http://notifier-py:8083
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:5000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  web:
+    image: cerebro-amigo/web:box
+    build:
+      context: ../..
+      dockerfile: apps/web/Dockerfile
+      # NEXT_PUBLIC_* são BUILD-time (inlined no bundle) — precisam chegar como
+      # build-arg, senão Web Push/Turnstile saem vazios do build.
+      args:
+        NEXT_PUBLIC_VAPID_PUBLIC_KEY: ${NEXT_PUBLIC_VAPID_PUBLIC_KEY:-}
+        NEXT_PUBLIC_TURNSTILE_SITE_KEY: ${NEXT_PUBLIC_TURNSTILE_SITE_KEY:-}
+        NEXT_PUBLIC_HUB_URL: ${NEXT_PUBLIC_HUB_URL:-}
+        NEXT_PUBLIC_MANUAL_PIX_CHAVE: ${NEXT_PUBLIC_MANUAL_PIX_CHAVE:-}
+        NEXT_PUBLIC_MANUAL_PIX_NOME: ${NEXT_PUBLIC_MANUAL_PIX_NOME:-}
+        NEXT_PUBLIC_MANUAL_PAGAMENTO_URL: ${NEXT_PUBLIC_MANUAL_PAGAMENTO_URL:-}
+    restart: unless-stopped
+    mem_reservation: 256m
+    mem_limit: 512m
+    cpu_shares: 1024
+    env_file: .env
+    environment:
+      API_GATEWAY_URL: http://api-gateway:5000
+      ORCHESTRATOR_PY_URL: http://orchestrator-py:8081
+      AGENTS_PY_URL: http://agents-py:8082
+      NOTIFIER_PY_URL: http://notifier-py:8083
+    depends_on:
+      api-gateway:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  orchestrator-py:
+    image: cerebro-amigo/orchestrator-py:box
+    build:
+      context: ../../apps/orchestrator-py
+    restart: unless-stopped
+    # Caminho de crise — teto folgado.
+    mem_reservation: 512m
+    mem_limit: 1g
+    cpu_shares: 1024
+    env_file: .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8081/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  agents-py:
+    image: cerebro-amigo/agents-py:box
+    build:
+      context: ../../apps/agents-py
+    restart: unless-stopped
+    # Plano batch — OOM killer mata este cgroup primeiro; prioridade baixa de CPU.
+    mem_reservation: 512m
+    mem_limit: 1g
+    cpus: "2.0"
+    cpu_shares: 256
+    env_file: .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8082/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  notifier-py:
+    image: cerebro-amigo/notifier-py:box
+    build:
+      context: ../../apps/notifier-py
+    restart: unless-stopped
+    mem_reservation: 256m
+    mem_limit: 512m
+    cpus: "1.0"
+    cpu_shares: 256
+    env_file: .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8083/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    mem_limit: 256m
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp" # HTTP/3
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - web
+      - api-gateway
+
+  # TURN/STUN (coturn) p/ teleconsulta P2P (ADR-026). Só relaya mídia quando o
+  # NAT bloqueia P2P direto; nada é gravado. network_mode host (range UDP + IP
+  # público real). Ativar: COMPOSE_PROFILES=turn (deploy.sh já ativa).
+  # SG precisa de UDP/TCP 3478 + UDP 49152-49251 (provision.sh cria).
+  coturn:
+    image: coturn/coturn:4.6
+    profiles: ["turn"]
+    network_mode: host
+    mem_limit: 256m
+    restart: unless-stopped
+    command: >
+      -n --log-file=stdout --no-cli --no-tls --no-dtls
+      --realm=${TURN_REALM:-cerebro-amigo}
+      --use-auth-secret --static-auth-secret=${TURN_SECRET}
+      --listening-port=3478
+      --min-port=49152 --max-port=49251
+      --external-ip=${TURN_EXTERNAL_IP}
+
+volumes:
+  caddy_data:
+  caddy_config:

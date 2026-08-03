@@ -1,0 +1,10 @@
+# Coletor Postgres → CloudWatch (ADR-077). Instalação: infra/systemd/README.md
+[Unit]
+Description=Metricas Postgres -> CloudWatch (cerebro, ADR-077)
+Wants=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+Environment=AWS_DEFAULT_REGION=sa-east-1
+ExecStart=/usr/local/sbin/pg-metrics.sh

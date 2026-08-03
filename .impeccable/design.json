@@ -1,0 +1,131 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-07-26T03:55:43.0210900Z",
+  "title": "Design System: Cérebro Amigo — Signal Boundary",
+  "extensions": {
+    "colorMeta": {
+      "vacuum": {
+        "role": "neutral",
+        "displayName": "Vacuum",
+        "canonical": "#03070c",
+        "tonalRamp": ["#03070c", "#07101a", "#0b1723", "#11283a", "#29465b", "#6f899d", "#9ab0c2", "#e9f3fb"]
+      },
+      "signal-cyan": {
+        "role": "primary",
+        "displayName": "Signal Cyan",
+        "canonical": "#35d8ff",
+        "tonalRamp": ["#00232e", "#003c4d", "#005b73", "#007d9b", "#00a7cb", "#35d8ff", "#83e9ff", "#daf9ff"]
+      },
+      "inspection-yellow": {
+        "role": "secondary",
+        "displayName": "Inspection Yellow",
+        "canonical": "#ffd42a",
+        "tonalRamp": ["#2b2100", "#4f3d00", "#755b00", "#9d7b00", "#c69e06", "#ffd42a", "#ffe67a", "#fff8d6"]
+      },
+      "human-coral": {
+        "role": "tertiary",
+        "displayName": "Human Coral",
+        "canonical": "#ff695f",
+        "tonalRamp": ["#32100f", "#561c1a", "#7c2926", "#a83a35", "#d44e47", "#ff695f", "#ffa19a", "#ffe1de"]
+      }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Instrument Display", "purpose": "Recruiter thesis and chapter statements." },
+      "body": { "displayName": "Human Reading", "purpose": "Calm explanatory and product copy." },
+      "label": { "displayName": "Evidence Label", "purpose": "Architecture layers, paths, state and controls." }
+    },
+    "shadows": [
+      {
+        "name": "detector-plane",
+        "value": "0 13px 26px rgba(0,0,0,0.58)",
+        "purpose": "Separates overlapping architecture planes without turning readouts into floating cards."
+      }
+    ],
+    "motion": [
+      {
+        "name": "evidence-orbit",
+        "value": "14s linear infinite",
+        "purpose": "Slowly moves the active proof ring; disabled under prefers-reduced-motion."
+      },
+      {
+        "name": "control-response",
+        "value": "180ms ease-out",
+        "purpose": "Immediate hover and focus response for links and controls."
+      }
+    ],
+    "breakpoints": [
+      { "name": "rail-collapse", "value": "1240px" },
+      { "name": "single-column", "value": "860px" },
+      { "name": "compact", "value": "520px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Inspection Action",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The single dominant recruiter action.",
+      "html": "<button class=\"ds-primary-action\">EXPLORE ARCHITECTURE <span aria-hidden=\"true\">→</span></button>",
+      "css": ".ds-primary-action{min-height:48px;display:flex;align-items:center;justify-content:space-between;gap:24px;padding:0 20px;border:1px solid #ffd42a;border-radius:0;background:#ffd42a;color:#03070c;font:600 11px/1 'JetBrains Mono',monospace;letter-spacing:.11em;text-transform:uppercase;transition:background-color 180ms ease-out,transform 180ms ease-out}.ds-primary-action:hover{background:#ffe36a;transform:translateX(4px)}.ds-primary-action:focus-visible{outline:2px solid #ffd42a;outline-offset:4px}"
+    },
+    {
+      "name": "Secondary System Action",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "Secondary external or demo action.",
+      "html": "<button class=\"ds-secondary-action\">OPEN THE DEMO <span aria-hidden=\"true\">↗</span></button>",
+      "css": ".ds-secondary-action{min-height:48px;display:flex;align-items:center;justify-content:space-between;gap:24px;padding:0 20px;border:1px solid rgba(53,216,255,.66);border-radius:0;background:transparent;color:#83e9ff;font:600 11px/1 'JetBrains Mono',monospace;letter-spacing:.11em;text-transform:uppercase;transition:color 180ms ease-out,background-color 180ms ease-out,transform 180ms ease-out}.ds-secondary-action:hover{color:#03070c;background:#35d8ff;transform:translateX(4px)}.ds-secondary-action:focus-visible{outline:2px solid #ffd42a;outline-offset:4px}"
+    },
+    {
+      "name": "Evidence Navigation",
+      "kind": "nav",
+      "description": "Tracked labels on a single instrument rail.",
+      "html": "<nav class=\"ds-nav\"><a class=\"ds-nav-active\" href=\"#\">ARCHITECTURE</a><a href=\"#\">CASE STUDY</a><a href=\"#\">GOVERNANCE</a></nav>",
+      "css": ".ds-nav{display:flex;gap:36px;align-items:center;padding:22px 0;border-bottom:1px solid #1f4058;background:#03070c}.ds-nav a{position:relative;color:#9ab0c2;text-decoration:none;font:500 10px/1 'JetBrains Mono',monospace;letter-spacing:.12em}.ds-nav a:hover,.ds-nav .ds-nav-active{color:#e9f3fb}.ds-nav a:focus-visible{outline:2px solid #ffd42a;outline-offset:4px}.ds-nav-active:after{content:'';position:absolute;left:0;right:0;bottom:-10px;height:1px;background:#35d8ff}"
+    },
+    {
+      "name": "Architecture Layer Plate",
+      "kind": "custom",
+      "description": "Compact label mounted on a detector plane.",
+      "html": "<div class=\"ds-layer\"><b>3</b><span><strong>PYTHON / LANGGRAPH</strong><small>AI orchestration</small></span></div>",
+      "css": ".ds-layer{display:flex;align-items:center;justify-content:center;gap:9px;min-width:210px;padding:5px 11px;border:1px solid rgba(53,216,255,.4);border-radius:0;background:rgba(2,8,13,.92);font-family:'JetBrains Mono',monospace}.ds-layer b{color:#35d8ff;font-size:16px}.ds-layer span{display:grid;gap:3px}.ds-layer strong{color:#e9f3fb;font-size:10px;letter-spacing:.08em}.ds-layer small{color:#9ab0c2;font-size:8px}"
+    },
+    {
+      "name": "Access Row",
+      "kind": "custom",
+      "description": "Secondary product access that remains visible without competing with the case study.",
+      "html": "<a class=\"ds-access\" href=\"#\"><span class=\"ds-access-icon\">◇</span><span><strong>Patient access</strong><small>Private companion experience</small></span><b aria-hidden=\"true\">→</b></a>",
+      "css": ".ds-access{display:grid;grid-template-columns:22px 1fr 16px;gap:10px;align-items:center;min-height:54px;padding:9px 14px;border:1px solid rgba(82,114,139,.5);border-radius:0;background:#07101a;color:#e9f3fb;text-decoration:none}.ds-access:hover{background:rgba(53,216,255,.06)}.ds-access:focus-visible{outline:2px solid #ffd42a;outline-offset:4px}.ds-access-icon,.ds-access strong,.ds-access b{color:#35d8ff}.ds-access span{display:grid;gap:3px}.ds-access strong{font:500 10px/1 'JetBrains Mono',monospace}.ds-access small{color:#52728b;font:9px/1.2 Inter,sans-serif}"
+    }
+  ],
+  "narrative": {
+    "northStar": "Signal Boundary",
+    "overview": "The interface borrows the precision and drama of a particle-detector event display, translated into a trustworthy full-stack AI system. Signals travel through visible layers; each transformation, safeguard and ownership boundary can be inspected. The world feels engineered rather than decorated and alive rather than clinical-cold. The reusable signature is a concentric system field crossed by a small number of purposeful signal tracks. Tracks always represent a true relationship or transition. Human review is not a footnote: it is a visible boundary where automation stops.",
+    "keyCharacteristics": [
+      "Near-black instrument field with steel-blue structural layers.",
+      "Signal Cyan for system flow, Inspection Yellow for active proof and Human Coral for safety boundaries.",
+      "Condensed technical display type, calm humanist body copy and tabular mono notation.",
+      "Concentric system topology on wide screens; linearized, numbered traces on small screens.",
+      "Precise motion that reveals causality, never ambient motion without meaning."
+    ],
+    "rules": [
+      { "name": "The Three Signals Rule", "body": "Cyan means flow, yellow means inspection and coral means human/safety. Never exchange their roles.", "section": "colors" },
+      { "name": "The Evidence Label Rule", "body": "Uppercase mono labels must name a real layer, state, decision or source.", "section": "typography" },
+      { "name": "The Instrument Depth Rule", "body": "Every layer must describe structure, state or causality.", "section": "elevation" }
+    ],
+    "dos": [
+      "Do make real architecture the first visual artifact.",
+      "Do show where automation ends and physician responsibility begins.",
+      "Do use motion to trace a real signal through true system boundaries.",
+      "Do pair technical density with short, calm human passages.",
+      "Do preserve keyboard access, reduced motion and a fully legible static state."
+    ],
+    "donts": [
+      "Don't turn psychiatric data into spectacle or imply diagnosis through visualization.",
+      "Don't fabricate metrics, customers, benchmarks or clinical outcomes.",
+      "Don't use concentric geometry without a true system mapping.",
+      "Don't fall back to a generic hero plus bento-card grid.",
+      "Don't obscure patient, physician, demo or contact access behind the case study."
+    ]
+  }
+}

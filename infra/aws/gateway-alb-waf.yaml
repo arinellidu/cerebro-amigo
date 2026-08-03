@@ -1,0 +1,218 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  Fronting do api-gateway (.NET, box clinico i-057860cd97edafefb) com ALB regional
+  internet-facing + AWS WAF (managed rules + rate-based por IP). Implementa a clausula
+  de borda do ADR-074 (gateway exposto a internet aberta apos web -> Vercel). Hoje
+  api.cerebroamigo.com.br aponta DIRETO pro EIP do box (sem ALB); este stack poe um ALB
+  na frente p/ ganhar WAF, que so anexa a ALB/CloudFront. ALB (nao CloudFront) porque o
+  gateway faz SSE (conversa paciente<->IA, sinalizacao teleconsulta) e precisa de
+  idle_timeout longo (300s) — CloudFront tem teto de origem ~60s e quebraria os gaps de
+  "LLM pensando". Defense-in-depth: o gateway ja exige X-Edge-Auth (ADR-074) e tem
+  login_rate_limits (Postgres, migration 0043); WAF acrescenta managed rules + rate-limit
+  de borda. Cutover reversivel por DNS. Ver docs/runbooks/gateway-alb-waf-cutover.md.
+
+Parameters:
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Default: vpc-0edf8eb7d2e60b397
+  SubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+    Default: "subnet-080b40f72f1971227,subnet-0c781b1f0ea120f58,subnet-026f35019da57ea52"
+    Description: 3 subnets publicas (sa-east-1a/1b/1c). ALB exige >=2 AZs. O box vive em 1a.
+  BoxInstanceId:
+    Type: AWS::EC2::Instance::Id
+    Default: i-057860cd97edafefb
+    Description: Instancia do box clinico que roda o gateway (alvo unico do TG).
+  BoxSecurityGroupId:
+    Type: AWS::EC2::SecurityGroup::Id
+    Default: sg-0f8f950282b292818
+    Description: SG do box (cerebro-app-sg). Recebe um ingress 5050 só-do-ALB por este stack.
+  GatewayPort:
+    Type: Number
+    Default: 5050
+    Description: Porta do host onde o gateway escuta (compose 5050:5000).
+  AcmCertificateArn:
+    Type: String
+    Description: >-
+      ARN do cert ACM (sa-east-1) cobrindo api.cerebroamigo.com.br, validado por DNS
+      ANTES do deploy (a zona DNS e na Vercel). NAO existe ainda — provisionar primeiro
+      (ver runbook). Sem cert valido o HttpsListener falha.
+  RateLimitPer5Min:
+    Type: Number
+    Default: 2000
+    Description: >-
+      Teto de requests por IP por janela de 5min (rate-based WAF, em BLOCK). Trafego
+      legitimo do gateway e baixo (so BFF/origem via X-Edge-Auth); 2000 e folgado. AWS min=100.
+  ManagedRulesAction:
+    Type: String
+    Default: count
+    AllowedValues: [count, block]
+    Description: >-
+      Acao das managed rule groups. DEFAULT=count (observar 1-2 semanas em CloudWatch/
+      sampled requests antes de bloquear — payload clinico JSON pode dar falso-positivo
+      em SQLi/SizeRestrictions). Flipar p/ block apos validar. Rate-based fica SEMPRE em block.
+
+Conditions:
+  ManagedBlock: !Equals [ !Ref ManagedRulesAction, block ]
+
+Resources:
+
+  # ── SG do ALB: 80/443 do mundo ───────────────────────────────────────────────
+  AlbSg:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: gateway ALB - entrada publica 80/443
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - { IpProtocol: tcp, FromPort: 80,  ToPort: 80,  CidrIp: 0.0.0.0/0, Description: HTTP (redirect 443) }
+        - { IpProtocol: tcp, FromPort: 443, ToPort: 443, CidrIp: 0.0.0.0/0, Description: HTTPS }
+      Tags:
+        - { Key: Name, Value: cerebro-gateway-alb-sg }
+        - { Key: project, Value: cerebro-amigo }
+
+  # ── Ingress no SG do box: ALB -> gateway na 5050 (so do ALB; nao abre ao mundo) ──
+  BoxIngressFromAlb:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref BoxSecurityGroupId
+      IpProtocol: tcp
+      FromPort: !Ref GatewayPort
+      ToPort: !Ref GatewayPort
+      SourceSecurityGroupId: !Ref AlbSg
+      Description: gateway port - so do ALB do gateway (ADR-074 fronting)
+
+  # ── Target group: o box, target-type instance ───────────────────────────────
+  TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: cerebro-gateway-tg
+      VpcId: !Ref VpcId
+      Port: !Ref GatewayPort
+      Protocol: HTTP
+      TargetType: instance
+      Targets:
+        - Id: !Ref BoxInstanceId
+          Port: !Ref GatewayPort
+      # /health e exento do X-Edge-Auth (ADR-074) -> probe limpo 200.
+      HealthCheckPath: /health
+      HealthCheckIntervalSeconds: 15
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 3
+      Matcher: { HttpCode: "200" }
+      TargetGroupAttributes:
+        - { Key: deregistration_delay.timeout_seconds, Value: "20" }
+
+  Alb:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: cerebro-gateway-alb
+      Type: application
+      Scheme: internet-facing
+      Subnets: !Ref SubnetIds
+      SecurityGroups: [ !Ref AlbSg ]
+      LoadBalancerAttributes:
+        # SSE: conversa paciente<->IA e sinalizacao de teleconsulta passam pelo gateway.
+        # 300s da folga p/ gaps sem byte (LLM pensando). Default 60s derrubaria.
+        - { Key: idle_timeout.timeout_seconds, Value: "300" }
+      Tags:
+        - { Key: Name, Value: cerebro-gateway-alb }
+        - { Key: project, Value: cerebro-amigo }
+
+  HttpsListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref Alb
+      Port: 443
+      Protocol: HTTPS
+      SslPolicy: ELBSecurityPolicy-TLS13-1-2-2021-06
+      Certificates: [ { CertificateArn: !Ref AcmCertificateArn } ]
+      DefaultActions:
+        - { Type: forward, TargetGroupArn: !Ref TargetGroup }
+
+  HttpRedirect:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref Alb
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - Type: redirect
+          RedirectConfig: { Protocol: HTTPS, Port: "443", StatusCode: HTTP_301 }
+
+  # ── WAF regional + associacao ao ALB ────────────────────────────────────────
+  WebAcl:
+    Type: AWS::WAFv2::WebACL
+    Properties:
+      Name: cerebro-gateway-waf
+      Scope: REGIONAL
+      DefaultAction: { Allow: {} }
+      Description: WAF do api-gateway (ADR-074) — managed rules + rate-based por IP.
+      VisibilityConfig:
+        SampledRequestsEnabled: true
+        CloudWatchMetricsEnabled: true
+        MetricName: cerebro-gateway-waf
+      Rules:
+        # Rate-based SEMPRE em block: barra abuso/custo por IP cedo (antes do gateway).
+        - Name: rate-limit-per-ip
+          Priority: 0
+          Action: { Block: {} }
+          Statement:
+            RateBasedStatement:
+              Limit: !Ref RateLimitPer5Min
+              AggregateKeyType: IP
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: rate-limit-per-ip
+        # Managed: Common (XSS/LFI/etc). Override Count|None conforme ManagedRulesAction.
+        - Name: aws-common
+          Priority: 1
+          OverrideAction: !If [ ManagedBlock, { None: {} }, { Count: {} } ]
+          Statement:
+            ManagedRuleGroupStatement:
+              VendorName: AWS
+              Name: AWSManagedRulesCommonRuleSet
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: aws-common
+        - Name: aws-known-bad-inputs
+          Priority: 2
+          OverrideAction: !If [ ManagedBlock, { None: {} }, { Count: {} } ]
+          Statement:
+            ManagedRuleGroupStatement:
+              VendorName: AWS
+              Name: AWSManagedRulesKnownBadInputsRuleSet
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: aws-known-bad-inputs
+        - Name: aws-ip-reputation
+          Priority: 3
+          OverrideAction: !If [ ManagedBlock, { None: {} }, { Count: {} } ]
+          Statement:
+            ManagedRuleGroupStatement:
+              VendorName: AWS
+              Name: AWSManagedRulesAmazonIpReputationList
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: aws-ip-reputation
+      Tags:
+        - { Key: project, Value: cerebro-amigo }
+
+  WebAclAssociation:
+    Type: AWS::WAFv2::WebACLAssociation
+    Properties:
+      ResourceArn: !Ref Alb
+      WebACLArn: !GetAtt WebAcl.Arn
+
+Outputs:
+  AlbDnsName:
+    Description: Apontar api.cerebroamigo.com.br (DNS, na Vercel) p/ este nome (CNAME). Cutover.
+    Value: !GetAtt Alb.DNSName
+  WebAclArn:
+    Value: !GetAtt WebAcl.Arn
+  AlbArn:
+    Value: !Ref Alb

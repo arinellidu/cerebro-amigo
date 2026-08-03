@@ -1,0 +1,19 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "bedrock:InvokeModel",
+        "bedrock:InvokeModelWithResponseStream"
+      ],
+      "Resource": [
+        "arn:aws:bedrock:sa-east-1::foundation-model/anthropic.*",
+        "arn:aws:bedrock:us-east-1::foundation-model/anthropic.*",
+        "arn:aws:bedrock:sa-east-1::foundation-model/cohere.embed-multilingual-v3",
+        "arn:aws:bedrock:sa-east-1:004177894935:inference-profile/*",
+        "arn:aws:bedrock:us-east-1:004177894935:inference-profile/*"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,62 @@
+# Box único do Check-up Mental (ADR-078) — substitui ALB+ASG do ADR-045 pós-teardown.
+# t3.small coberto pelo Savings Plan 6c71ed92 (t3/sa-east-1, ativo até 2027-06-18).
+# Rede: checkup e caddy em network_mode host (client DB decide TLS por regex no host
+# do DSN — 127.0.0.1 = sem SSL, correto p/ Postgres local); db publica só em loopback.
+name: checkup
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: checkup
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${DB_SUPERUSER_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5432:5432"
+    mem_limit: 512m
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d checkup"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  checkup:
+    build:
+      context: ../..
+      dockerfile: apps/checkup/Dockerfile
+    image: cerebro-amigo-checkup:box
+    restart: unless-stopped
+    network_mode: host
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: "3001"
+      HOSTNAME: 127.0.0.1 # só loopback; Caddy faz o proxy (SG também não expõe 3001)
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      CHECKUP_DATABASE_URL: postgres://checkup_app:${CHECKUP_DB_PASSWORD}@127.0.0.1:5432/checkup
+      NEXT_PUBLIC_SITE_URL: https://checkup.cerebroamigo.com.br
+      QR_TARGET_URL: https://www.cerebroamigo.com.br/medicos
+      CHECKUP_METRICS_TOKEN: ${CHECKUP_METRICS_TOKEN}
+      NEXT_PUBLIC_CHECKUP_TRACKING_ENABLED: "false"
+      CHECKUP_TRUSTED_PROXY_HOPS: "1" # Caddy é o único hop; sem CloudFront
+    mem_limit: 512m
+    cpus: 1.5
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:

@@ -1,0 +1,290 @@
+# Postgres é externo (RDS sa-east-1) — não entra aqui.
+# Serviços Python autenticam na Bedrock via IAM role da EC2 (produção) ou AWS_PROFILE (dev).
+#
+# Só o stack clínico (6 serviços + coturn opcional). O Check-up Mental foi desacoplado
+# para infra própria (ALB + ASG, ADR-045) — deploy dele via `deploy-checkup` no CI.
+#
+# image: → ECR em produção (tag = IMAGE_TAG=$GITHUB_SHA, definido pelo CI).
+# build: → SÓ dev local; "docker compose up --build" constrói localmente.
+#   HISTÓRICO AWS: o antigo deploy usava `up -d --no-build` → box só dava pull
+#   do ECR. Não há workflow AWS ativo; o portfólio atual segue o ADR-080.
+# IMAGE_TAG não setado em dev → usa tag "latest" (construa local antes: docker compose build).
+#
+# ─── Isolamento de recurso (ADR-009, revisado pelo ADR-077) ──────────────────
+#
+# Com o Postgres self-hosted no box (ADR-077), TODOS os serviços têm mem_limit:
+# um vazamento em qualquer vizinho não pode derrubar o banco (que agora serve o
+# caminho de crise). A assimetria do ADR-009 vive nos valores: interativo/crise
+# (postgres, orchestrator, api-gateway, web) tem teto folgado (≥4× o uso medido)
+# e cpu_shares 1024; batch (agents-py, notifier-py) tem teto justo e cpu_shares 256.
+#
+# Calibrado para t3.medium (2 vCPU / 3,7 GiB + swap 4G) — orçamento em
+# docs/migration/00-discovery.md §7.2 (cenário A); uso medido 2026-07-06:
+# soma dos 5 serviços ≈ 553 MiB. Soma dos tetos (5,05 GiB) excede a RAM de
+# propósito: teto = contenção de vazamento, não alocação. Recalibrar após
+# medir: docker stats --no-stream.
+
+services:
+  # Postgres self-hosted (ADR-077) — substitui o RDS após o cutover
+  # (docs/migration/01-runbook.md). Até lá as apps seguem apontando pro RDS;
+  # nenhum serviço tem depends_on dele ainda. TLS (cert self-signed) entra
+  # antes do cutover — Fase 0 item 3 do runbook.
+  # Porta publicada SÓ em loopback (admin via SSM no host); apps usarão o nome
+  # `postgres` na rede do compose; checkup ASG entrará via SG restrito (Fase 0).
+  postgres:
+    image: pgvector/pgvector:0.8.4-pg16
+    logging:
+      driver: awslogs
+      options:
+        awslogs-region: sa-east-1
+        awslogs-group: /cerebro/postgres
+        awslogs-stream: postgres
+        awslogs-create-group: "false"
+    restart: unless-stopped
+    shm_size: 512mb
+    # Plano interativo — banco atende o caminho de crise.
+    mem_reservation: 512m
+    mem_limit: 1g
+    cpu_shares: 1024
+    ports:
+      # Dev: loopback. Prod (box): POSTGRES_BIND=<IP privado> no .env — o checkup
+      # ASG conecta pela VPC; o SG só permite 5432 do SG do checkup (nunca público).
+      - "${POSTGRES_BIND:-127.0.0.1}:5432:5432"
+    environment:
+      # Gerar com: openssl rand -base64 24 (no .env do host; NUNCA comitar)
+      POSTGRES_PASSWORD: ${POSTGRES_LOCAL_PASSWORD:?defina POSTGRES_LOCAL_PASSWORD no .env}
+    volumes:
+      # Volume EBS dedicado, cifrado (infra/scripts/setup-data-volume.sh)
+      - /data/postgres:/var/lib/postgresql/data
+    # Tuning p/ t3.medium (discovery §7.2-A). Em t3.large (cenário B):
+    # shared_buffers=1536MB, effective_cache_size=3GB.
+    # ssl=on: cert self-signed em $PGDATA/server.{crt,key} (gerado no cutover);
+    # DSNs seguem sslmode=require / Trust Server Certificate=true.
+    command:
+      - postgres
+      - -c
+      - ssl=on
+      - -c
+      - shared_buffers=256MB
+      - -c
+      - effective_cache_size=1GB
+      - -c
+      - work_mem=16MB
+      - -c
+      - maintenance_work_mem=256MB
+      - -c
+      - max_connections=100
+      - -c
+      - wal_compression=on
+      - -c
+      - log_min_duration_statement=1000
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+  web:
+    image: 004177894935.dkr.ecr.sa-east-1.amazonaws.com/cerebro-amigo/web:${IMAGE_TAG:-latest}
+    logging:
+      driver: awslogs
+      options:
+        awslogs-region: sa-east-1
+        awslogs-group: /cerebro/web
+        awslogs-stream: web
+        awslogs-create-group: "false"
+    restart: unless-stopped
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    # Plano interativo — teto folgado (uso medido ~76 MiB).
+    mem_reservation: 256m
+    mem_limit: 512m
+    cpu_shares: 1024
+    ports:
+      - "3000:3000"
+    env_file: .env
+    environment:
+      API_GATEWAY_URL: http://api-gateway:5000
+      ORCHESTRATOR_PY_URL: http://orchestrator-py:8081
+      AGENTS_PY_URL: http://agents-py:8082
+      NOTIFIER_PY_URL: http://notifier-py:8083
+      # Cockpit de Aquisição (ADR-050): BFF clínico lê as métricas AGREGADAS do
+      # Check-up (schema isolado) via HTTP — gateway não acessa o schema `checkup`.
+      # Token: SSM SecureString (mesmo valor no Check-up, que valida). Sem ele → 503.
+      CHECKUP_METRICS_TOKEN: ${CHECKUP_METRICS_TOKEN:-}
+      CHECKUP_METRICS_URL: ${CHECKUP_METRICS_URL:-https://checkup.cerebroamigo.com.br/api/funnel-metrics}
+    depends_on:
+      api-gateway:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  api-gateway:
+    image: 004177894935.dkr.ecr.sa-east-1.amazonaws.com/cerebro-amigo/api-gateway:${IMAGE_TAG:-latest}
+    logging:
+      driver: awslogs
+      options:
+        awslogs-region: sa-east-1
+        awslogs-group: /cerebro/api-gateway
+        awslogs-stream: api-gateway
+        awslogs-create-group: "false"
+    restart: unless-stopped
+    build:
+      context: ./apps/api-gateway
+    # Plano interativo — teto folgado (uso medido ~117 MiB).
+    mem_reservation: 256m
+    mem_limit: 768m
+    cpu_shares: 1024
+    ports:
+      - "5050:5000"
+    env_file: .env
+    # Override das URLs internas para a rede do compose. O .env traz valores
+    # `localhost` (corretos p/ dev NATIVO); dentro do container, o gateway
+    # precisa alcançar os serviços Python pelos nomes de serviço — senão
+    # localhost:8082/8081 não resolve (quebra diário, gate de crise e SSE).
+    environment:
+      ORCHESTRATOR_PY_URL: http://orchestrator-py:8081
+      AGENTS_PY_URL: http://agents-py:8082
+      NOTIFIER_PY_URL: http://notifier-py:8083
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:5000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  # api-gateway-scala REMOVIDO do box — ADR-067 pausado, ADR-071 decomissionou. O
+  # strangler parou em 1/62 rotas (só /api/v1/auth/me, nunca flipado no BFF → ocioso).
+  # Source removida da árvore em 2026-07-26 — preservada na tag git
+  # `archive/api-gateway-scala`. Reativar exige novo ADR.
+
+  orchestrator-py:
+    image: 004177894935.dkr.ecr.sa-east-1.amazonaws.com/cerebro-amigo/orchestrator-py:${IMAGE_TAG:-latest}
+    logging:
+      driver: awslogs
+      options:
+        awslogs-region: sa-east-1
+        awslogs-group: /cerebro/orchestrator-py
+        awslogs-stream: orchestrator-py
+        awslogs-create-group: "false"
+    restart: unless-stopped
+    build:
+      context: ./apps/orchestrator-py
+    # Caminho de crise — teto folgado 8× o uso medido (~127 MiB); ADR-077 fecha
+    # o teto de todos p/ proteger o postgres co-localizado de vazamento.
+    # LangGraph checkpoint (psycopg3 pool 10) + asyncpg pool 20.
+    mem_reservation: 512m
+    mem_limit: 1g
+    cpu_shares: 1024
+    ports:
+      - "8081:8081"
+    env_file: .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8081/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  agents-py:
+    image: 004177894935.dkr.ecr.sa-east-1.amazonaws.com/cerebro-amigo/agents-py:${IMAGE_TAG:-latest}
+    logging:
+      driver: awslogs
+      options:
+        awslogs-region: sa-east-1
+        awslogs-group: /cerebro/agents-py
+        awslogs-stream: agents-py
+        awslogs-create-group: "false"
+    restart: unless-stopped
+    build:
+      context: ./apps/agents-py
+    # Plano batch — teto duro. scipy/numpy (padroes) + asyncpg pool 10.
+    # mem_limit 1g (era 4g na era t3.xlarge): OOM killer mata este cgroup primeiro.
+    # cpu_shares: prioridade baixa quando CPU contendida (interativo=1024 vs batch=256).
+    # Evolução para disparo externo: ver infra/aws/eventbridge-agents-trigger.md
+    mem_limit: 1g
+    mem_reservation: 512m
+    cpus: "2.0"
+    cpu_shares: 256
+    ports:
+      - "8082:8082"
+    env_file: .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8082/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  notifier-py:
+    image: 004177894935.dkr.ecr.sa-east-1.amazonaws.com/cerebro-amigo/notifier-py:${IMAGE_TAG:-latest}
+    logging:
+      driver: awslogs
+      options:
+        awslogs-region: sa-east-1
+        awslogs-group: /cerebro/notifier-py
+        awslogs-stream: notifier-py
+        awslogs-create-group: "false"
+    restart: unless-stopped
+    build:
+      context: ./apps/notifier-py
+    # Plano batch leve — sem LLM, sem scipy. Teto conservador (uso ~71 MiB).
+    mem_limit: 512m
+    mem_reservation: 256m
+    cpus: "1.0"
+    cpu_shares: 256
+    ports:
+      - "8083:8083"
+    env_file: .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8083/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  # TURN/STUN (coturn) para a teleconsulta P2P (ADR-026). Só RELAYA mídia quando
+  # o P2P direto é bloqueado por NAT — no caminho feliz a mídia vai
+  # browser↔browser e não passa por aqui. Sem mídia clínica armazenada.
+  #
+  # network_mode: host → o relay precisa do range de portas UDP + o IP público
+  # real (external-ip). Ativar só onde houver IP público (prod):
+  #   COMPOSE_PROFILES=turn docker compose up -d
+  # Security group / firewall: abrir UDP 3478, TCP 3478 e UDP 49152-49251.
+  # TURN_SECRET é o MESMO valor lido pelo gateway (HMAC da credencial efêmera).
+  coturn:
+    image: coturn/coturn:4.6
+    profiles: ["turn"]
+    network_mode: host
+    mem_limit: 256m
+    restart: unless-stopped
+    command: >
+      -n --log-file=stdout --no-cli --no-tls --no-dtls
+      --realm=${TURN_REALM:-cerebro-amigo}
+      --use-auth-secret --static-auth-secret=${TURN_SECRET}
+      --listening-port=3478
+      --min-port=49152 --max-port=49251
+      --external-ip=${TURN_EXTERNAL_IP}
+
+  # Check-up Mental (apps/checkup) NÃO roda mais aqui — foi desacoplado para infra
+  # própria (ALB + Auto Scaling Group), ver ADR-045 + infra/aws/checkup-asg-alb.yaml.
+  # Superfície pública anônima isolada do box clínico (caminho de crise). Deploy do
+  # checkup = build no CI → ECR → bump SSM /cerebro-amigo/checkup/image-tag + instance
+  # refresh do antigo ASG `cerebro-checkup-asg` (histórico ADR-045).
